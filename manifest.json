@@ -1,0 +1,45 @@
+{
+  "name": "Spothan — Discover Places Near You",
+  "short_name": "Spothan",
+  "description": "Find and share the best local spots around you — food, nature, activities and events, all on one map.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0d0d0d",
+  "theme_color": "#0d0d0d",
+  "lang": "en",
+  "categories": ["lifestyle", "navigation", "social"],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshots/screen-mobile.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Spothan map view on mobile"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Add a Place",
+      "short_name": "Add Place",
+      "description": "Submit a new spot to the map",
+      "url": "/?action=add",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
