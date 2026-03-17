@@ -672,7 +672,7 @@ const EMOJI_SETS = {
 // 2. Project Settings → API → copy "Project URL" and "anon public" key
 // 3. Paste them here:
 const SUPABASE_URL = 'https://cvlyxqtvniynimtalaap.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_secret_xlAhnewtxqTBmTIFQ1wTsg_l3zokMgj';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2bHl4cXR2bml5bmltdGFsYWFwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1MjEwODcsImV4cCI6MjA4OTA5NzA4N30.sw-AWbUwIdDSHNzIFNmJIE_AYKKoEVJrxzUIdYmqmAU';
 
 // Lightweight Supabase REST client — no npm needed, works in a single HTML file
 const sb = {
@@ -2272,7 +2272,7 @@ showOnboardingIfFirst();
     <button id="locConfirmYes" style="flex:1;padding:11px;background:var(--ink);color:white;border:none;border-radius:11px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">✅ Yes, use this</button>
     <button id="locConfirmNo"  style="flex:1;padding:11px;background:var(--warm);color:var(--ink2);border:none;border-radius:11px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">🔍 Search again</button>
   </div>
-</div> -->
+</div>
 <div id="onboardOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(13,13,13,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:flex-end;justify-content:center;padding:0 0 env(safe-area-inset-bottom,0)">
   <div style="background:var(--surface);border-radius:28px 28px 0 0;padding:28px 24px 36px;max-width:480px;width:100%;box-shadow:0 -8px 40px rgba(0,0,0,.18)">
     <div style="text-align:center;margin-bottom:22px">
