@@ -29,20 +29,12 @@
 <meta name="mobile-web-app-capable"                content="yes">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<!-- Supabase config — this file is NOT committed to GitHub -->
-<!-- Create config.js with your keys (see config.example.js) -->
-<script>
-  // Fallback defaults — overwritten by config.js if present
-  var SUPABASE_URL      = 'YOUR_SUPABASE_URL';
-  var SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
-</script>
-<script src="config.js" onerror="console.warn('[Spothan] config.js not found — running in local-only mode')"></script>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <style>
 :root {
   --bg:#f2ede6; --surface:#fff; --warm:#e8e1d6; --ink:#0d0d0d; --ink2:#3a3530; --muted:#9a9188;
@@ -682,9 +674,8 @@ const EMOJI_SETS = {
 };
 
 // ── SUPABASE CONFIG ──
-// Keys are loaded from config.js (never committed to GitHub)
-// SUPABASE_URL and SUPABASE_ANON_KEY are defined there
-// If config.js is missing, the app runs in local-only mode
+const SUPABASE_URL      = 'https://cvlyxqtvniynimtalaap.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2bHl4cXR2bml5bmltdGFsYWFwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1MjEwODcsImV4cCI6MjA4OTA5NzA4N30.sw-AWbUwIdDSHNzIFNmJIE_AYKKoEVJrxzUIdYmqmAU';
 
 // Lightweight Supabase REST client — no npm needed, works in a single HTML file
 const sb = {
