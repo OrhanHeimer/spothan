@@ -5,7 +5,7 @@
 //   API calls (weather, geocoding)   → Network-first with cache fallback (fresh data when online)
 //   Everything else                  → Network-first
 
-const CACHE_VERSION  = 'spothan-v1';
+const CACHE_VERSION  = 'spothan-v2';
 const TILE_CACHE     = 'spothan-tiles-v1';
 const API_CACHE      = 'spothan-api-v1';
 
