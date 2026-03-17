@@ -1,0 +1,2 @@
+var SUPABASE_URL      = 'https://cvlyxqtvniynimtalaap.supabase.co';
+var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2bHl4cXR2bml5bmltdGFsYWFwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1MjEwODcsImV4cCI6MjA4OTA5NzA4N30.sw-AWbUwIdDSHNzIFNmJIE_AYKKoEVJrxzUIdYmqmAU';
