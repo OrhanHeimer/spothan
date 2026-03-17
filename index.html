@@ -34,7 +34,15 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<!-- Supabase config — this file is NOT committed to GitHub -->
+<!-- Create config.js with your keys (see config.example.js) -->
+<script>
+  // Fallback defaults — overwritten by config.js if present
+  var SUPABASE_URL      = 'YOUR_SUPABASE_URL';
+  var SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+</script>
+<script src="config.js" onerror="console.warn('[Spothan] config.js not found — running in local-only mode')"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque
 <style>
 :root {
   --bg:#f2ede6; --surface:#fff; --warm:#e8e1d6; --ink:#0d0d0d; --ink2:#3a3530; --muted:#9a9188;
@@ -43,6 +51,12 @@
 }
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--ink);height:100dvh;overflow:hidden;position:relative;}
+/* iOS PWA safe area fixes */
+#map{position:absolute;top:0;left:0;right:0;bottom:0;}
+.top-panel{padding-top:max(14px, env(safe-area-inset-top, 14px));}
+.fab{bottom:max(28px, calc(env(safe-area-inset-bottom, 0px) + 16px));}
+.count-pill{bottom:max(92px, calc(env(safe-area-inset-bottom, 0px) + 80px));}
+.toast{bottom:max(84px, calc(env(safe-area-inset-bottom, 0px) + 72px));}
 #map{position:absolute;inset:0;z-index:0;}
 .leaflet-tile{filter:saturate(.55) brightness(1.1) contrast(.92);}
 .marker-cluster-small,.marker-cluster-medium,.marker-cluster-large{background-color:rgba(13,13,13,.15)!important;}
@@ -668,11 +682,9 @@ const EMOJI_SETS = {
 };
 
 // ── SUPABASE CONFIG ──
-// 1. Go to supabase.com → New project
-// 2. Project Settings → API → copy "Project URL" and "anon public" key
-// 3. Paste them here:
-const SUPABASE_URL = 'https://cvlyxqtvniynimtalaap.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2bHl4cXR2bml5bmltdGFsYWFwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1MjEwODcsImV4cCI6MjA4OTA5NzA4N30.sw-AWbUwIdDSHNzIFNmJIE_AYKKoEVJrxzUIdYmqmAU';
+// Keys are loaded from config.js (never committed to GitHub)
+// SUPABASE_URL and SUPABASE_ANON_KEY are defined there
+// If config.js is missing, the app runs in local-only mode
 
 // Lightweight Supabase REST client — no npm needed, works in a single HTML file
 const sb = {
@@ -768,11 +780,22 @@ async function loadPlaces() {
 }
 
 async function loadPending() {
+  // Loads only THIS device's pending places — shown as grey pins on the map
   try {
     const rows = await sb.select('places', `status=eq.pending&device_id=eq.${DEVICE_ID}&order=created_at.asc`);
     pendingPlaces = (rows || []).map(dbToPlace);
   } catch(e) {
     console.warn('[Spothan] loadPending failed:', e);
+  }
+}
+
+async function loadAllPending() {
+  // Loads ALL pending places from all devices — used by admin review panel only
+  try {
+    const rows = await sb.select('places', 'status=eq.pending&order=created_at.asc');
+    pendingPlaces = (rows || []).map(dbToPlace);
+  } catch(e) {
+    console.warn('[Spothan] loadAllPending failed:', e);
   }
 }
 
@@ -996,8 +1019,9 @@ let userCenter = null; // set after geolocation resolves
 
 function dismissSplash() {
   const s = document.getElementById('splash');
+  if (!s) return; // already dismissed
   s.classList.add('hide');
-  setTimeout(() => s.remove(), 520);
+  setTimeout(() => { if (s.parentNode) s.remove(); }, 520);
 }
 
 async function bootMap(center, zoom) {
@@ -1724,9 +1748,11 @@ async function geocodeSearch(q, box, input, confirm){
 }
 
 // ── DATA PANEL ──
-function openDataPanel(){
+async function openDataPanel(){
   const pin = prompt('🔐 Data PIN:');
   if (pin !== DATA_PIN) { showToast('Wrong PIN'); history.replaceState(null,'',location.pathname); return; }
+  showToast('Loading data…');
+  await loadPlaces();
   document.getElementById('dataOutput').textContent = JSON.stringify(places, null, 2);
   document.getElementById('dataPanel').style.display = 'block';
 }
@@ -2008,9 +2034,12 @@ function initReportModal() {
 
 // ── REVIEW PANEL ──
 let rpActiveTab = 'pending';
-function openReviewPanel() {
+async function openReviewPanel() {
   const pin = prompt('🔐 Admin PIN:');
   if (pin !== REVIEW_PIN) { showToast('Wrong PIN'); history.replaceState(null,'',location.pathname); return; }
+  showToast('Loading submissions…');
+  await loadAllPending();
+  await loadFeedback();
   renderRpPending();
   renderRpLive();
   renderRpReports();
@@ -2209,13 +2238,26 @@ function dismissOnboarding() {
 
 // ── INSTALL PROMPT (beforeinstallprompt) ──
 let deferredInstallPrompt = null;
+
+// Detect iOS Safari
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+
+// Show iOS-specific instructions since beforeinstallprompt doesn't work on iOS
+function showIOSInstallBanner() {
+  if (!isIOS || isInStandaloneMode) return;
+  if (localStorage.getItem('spothan_install_dismissed_v1')) return;
+  const hasEngaged = localStorage.getItem('spothan_engaged_v1');
+  if (!hasEngaged) return;
+  document.getElementById('iosBanner').style.display = 'flex';
+}
+
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   deferredInstallPrompt = e;
-  // Never show again if user already dismissed or installed
   if (localStorage.getItem('spothan_install_dismissed_v1')) return;
   const hasEngaged = localStorage.getItem('spothan_engaged_v1');
-  if (hasEngaged && !window.matchMedia('(display-mode: standalone)').matches) {
+  if (hasEngaged && !isInStandaloneMode) {
     document.getElementById('installBanner').style.display = 'flex';
   }
 });
@@ -2239,10 +2281,11 @@ document.addEventListener('DOMContentLoaded', () => {
 function markEngaged() {
   if (!localStorage.getItem('spothan_engaged_v1')) {
     localStorage.setItem('spothan_engaged_v1', '1');
-    // If we already captured the prompt, show the banner now
-    if (deferredInstallPrompt && !window.matchMedia('(display-mode: standalone)').matches) {
+    if (deferredInstallPrompt && !isInStandaloneMode) {
       setTimeout(() => document.getElementById('installBanner').style.display = 'flex', 1000);
     }
+    // Show iOS banner if on iPhone/iPad
+    setTimeout(showIOSInstallBanner, 1000);
   }
 }
 
@@ -2262,6 +2305,25 @@ if (new URLSearchParams(location.search).get('action') === 'add') {
 
 initMap();
 showOnboardingIfFirst();
+
+// ── EMERGENCY SEED BOOTSTRAP ──
+// Runs immediately after page loads. If localStorage has no places at all,
+// writes seed data right now — before any async code could interfere.
+(function() {
+  try {
+    const existing = localStorage.getItem('spothan_v2');
+    const parsed = existing ? JSON.parse(existing) : null;
+    if (!parsed || parsed.length === 0) {
+      // places array is already populated by bootMap above, save it
+      setTimeout(() => {
+        if (places && places.length > 0) {
+          localStorage.setItem('spothan_v2', JSON.stringify(places));
+          console.log('[Spothan] Emergency seed saved:', places.length, 'places');
+        }
+      }, 3000);
+    }
+  } catch(e) {}
+})();
 </script>
 
 <!-- ── LOCATION CONFIRM CARD ── -->
@@ -2299,6 +2361,22 @@ showOnboardingIfFirst();
       </div>
     </div>
     <button onclick="dismissOnboarding()" style="width:100%;padding:15px;background:var(--accent);color:white;border:none;border-radius:14px;font-family:'Bricolage Grotesque',sans-serif;font-size:16px;font-weight:800;cursor:pointer;letter-spacing:.3px">Let's explore →</button>
+  </div>
+</div>
+
+<!-- ── iOS INSTALL BANNER ── -->
+<div id="iosBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9998;padding:16px 16px calc(16px + env(safe-area-inset-bottom,0));background:var(--surface);border-top:1.5px solid var(--warm);box-shadow:0 -4px 24px rgba(0,0,0,.12);">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+    <div style="font-size:13px;font-weight:700;color:var(--ink);">📲 Add Spothan to your Home Screen</div>
+    <button onclick="localStorage.setItem('spothan_install_dismissed_v1','1');document.getElementById('iosBanner').style.display='none'" style="background:none;border:none;font-size:18px;color:var(--muted);cursor:pointer;padding:0;line-height:1;">✕</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:12px;padding:11px 14px;">
+    <div style="font-size:22px;">1️⃣</div>
+    <div style="font-size:12px;color:var(--ink2);">Tap the <strong>Share button</strong> <span style="font-size:15px;">⎙</span> at the bottom of Safari</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:12px;padding:11px 14px;margin-top:8px;">
+    <div style="font-size:22px;">2️⃣</div>
+    <div style="font-size:12px;color:var(--ink2);">Scroll down and tap <strong>"Add to Home Screen"</strong></div>
   </div>
 </div>
 
