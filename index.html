@@ -34,15 +34,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
-<!-- Supabase config — this file is NOT committed to GitHub -->
-<!-- Create config.js with your keys (see config.example.js) -->
-<script>
-  // Fallback defaults — overwritten by config.js if present
-  var SUPABASE_URL      = 'YOUR_SUPABASE_URL';
-  var SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
-</script>
-<script src="config.js" onerror="console.warn('[Spothan] config.js not found — running in local-only mode')"></script>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <style>
 :root {
   --bg:#f2ede6; --surface:#fff; --warm:#e8e1d6; --ink:#0d0d0d; --ink2:#3a3530; --muted:#9a9188;
@@ -676,9 +668,11 @@ const EMOJI_SETS = {
 };
 
 // ── SUPABASE CONFIG ──
-// Keys are loaded from config.js (never committed to GitHub)
-// SUPABASE_URL and SUPABASE_ANON_KEY are defined there
-// If config.js is missing, the app runs in local-only mode
+// 1. Go to supabase.com → New project
+// 2. Project Settings → API → copy "Project URL" and "anon public" key
+// 3. Paste them here:
+const SUPABASE_URL = 'https://cvlyxqtvniynimtalaap.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2bHl4cXR2bml5bmltdGFsYWFwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1MjEwODcsImV4cCI6MjA4OTA5NzA4N30.sw-AWbUwIdDSHNzIFNmJIE_AYKKoEVJrxzUIdYmqmAU';
 
 // Lightweight Supabase REST client — no npm needed, works in a single HTML file
 const sb = {
@@ -774,22 +768,11 @@ async function loadPlaces() {
 }
 
 async function loadPending() {
-  // Loads only THIS device's pending places — shown as grey pins on the map
   try {
     const rows = await sb.select('places', `status=eq.pending&device_id=eq.${DEVICE_ID}&order=created_at.asc`);
     pendingPlaces = (rows || []).map(dbToPlace);
   } catch(e) {
     console.warn('[Spothan] loadPending failed:', e);
-  }
-}
-
-async function loadAllPending() {
-  // Loads ALL pending places from all devices — used by admin review panel only
-  try {
-    const rows = await sb.select('places', 'status=eq.pending&order=created_at.asc');
-    pendingPlaces = (rows || []).map(dbToPlace);
-  } catch(e) {
-    console.warn('[Spothan] loadAllPending failed:', e);
   }
 }
 
@@ -1741,11 +1724,9 @@ async function geocodeSearch(q, box, input, confirm){
 }
 
 // ── DATA PANEL ──
-async function openDataPanel(){
+function openDataPanel(){
   const pin = prompt('🔐 Data PIN:');
   if (pin !== DATA_PIN) { showToast('Wrong PIN'); history.replaceState(null,'',location.pathname); return; }
-  showToast('Loading data…');
-  await loadPlaces();
   document.getElementById('dataOutput').textContent = JSON.stringify(places, null, 2);
   document.getElementById('dataPanel').style.display = 'block';
 }
@@ -2027,12 +2008,9 @@ function initReportModal() {
 
 // ── REVIEW PANEL ──
 let rpActiveTab = 'pending';
-async function openReviewPanel() {
+function openReviewPanel() {
   const pin = prompt('🔐 Admin PIN:');
   if (pin !== REVIEW_PIN) { showToast('Wrong PIN'); history.replaceState(null,'',location.pathname); return; }
-  showToast('Loading submissions…');
-  await loadAllPending();
-  await loadFeedback();
   renderRpPending();
   renderRpLive();
   renderRpReports();
@@ -2284,25 +2262,6 @@ if (new URLSearchParams(location.search).get('action') === 'add') {
 
 initMap();
 showOnboardingIfFirst();
-
-// ── EMERGENCY SEED BOOTSTRAP ──
-// Runs immediately after page loads. If localStorage has no places at all,
-// writes seed data right now — before any async code could interfere.
-(function() {
-  try {
-    const existing = localStorage.getItem('spothan_v2');
-    const parsed = existing ? JSON.parse(existing) : null;
-    if (!parsed || parsed.length === 0) {
-      // places array is already populated by bootMap above, save it
-      setTimeout(() => {
-        if (places && places.length > 0) {
-          localStorage.setItem('spothan_v2', JSON.stringify(places));
-          console.log('[Spothan] Emergency seed saved:', places.length, 'places');
-        }
-      }, 3000);
-    }
-  } catch(e) {}
-})();
 </script>
 
 <!-- ── LOCATION CONFIRM CARD ── -->
