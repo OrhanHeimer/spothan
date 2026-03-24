@@ -63,6 +63,15 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .about-overlay.on{opacity:1;pointer-events:all;}
 .about-modal{background:var(--surface);border-radius:22px 22px 0 0;padding:22px 18px 38px;width:100%;max-width:480px;transform:translateY(100%);transition:transform .36s cubic-bezier(.32,.72,0,1);padding-bottom:max(38px,calc(env(safe-area-inset-bottom,0px) + 24px));}
 .about-overlay.on .about-modal{transform:translateY(0);}
+.about-section-label{font-size:10px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);margin:18px 0 8px;}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+.stat-card{background:linear-gradient(180deg,var(--bg),#f8f5ef);border-radius:16px;padding:14px 12px;display:flex;flex-direction:column;gap:6px;min-height:110px;justify-content:center;}
+.stat-icon{font-size:22px;line-height:1;}
+.stat-label{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);}
+.stat-value{font-family:'Bricolage Grotesque',sans-serif;font-size:30px;font-weight:800;line-height:1;color:var(--ink);}
+.stat-note{font-size:12px;line-height:1.5;color:var(--ink2);}
+.stats-footnote{background:var(--bg);border-radius:12px;padding:11px 13px;font-size:12px;line-height:1.55;color:var(--muted);margin-bottom:14px;}
+@media (max-width: 540px){.stats-grid{grid-template-columns:1fr;}}
 .logo-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 2s ease-in-out infinite;}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.7;transform:scale(1.3);}}
 .search-wrap{flex:1;background:var(--surface);border-radius:50px;display:flex;align-items:center;padding:0 14px;height:44px;box-shadow:var(--sh);gap:7px;min-width:0;position:relative;}
@@ -651,11 +660,14 @@ const HALF_LIFE = 30 * DAY;
 const STORAGE_KEY = 'spothan_v2';
 const PENDING_KEY = 'spothan_pending_v1';
 const VOTES_KEY = 'spothan_votes_v1';
+const VOTE_LOCK_KEY = 'spothan_vote_locks_v1';
 const SUBMIT_LOG_KEY = 'spothan_submits_v1';
 const REVIEW_PIN = '5703'; // change this to whatever you want
 const DATA_PIN   = '5703'; // can be different from REVIEW_PIN if you want
 const SEED_KEY = 'spothan_seeded_v1'; // tracks whether seed data has been loaded
 const APPROVED_KEY = 'spothan_approved_v1'; // names of approved places to notify submitter
+const APPROVED_SUBMISSIONS_KEY = 'spothan_approved_submissions_v1';
+const VOTE_COOLDOWN = 10 * 60 * 1000;
 
 // now() instead of frozen NOW constant — fixes stale decay/expiry when app stays open
 function now() { return Date.now(); }
@@ -770,6 +782,7 @@ async function loadPlaces() {
   try {
     const rows = await sb.select('places', 'status=eq.live&order=created_at.asc');
     places = (rows || []).map(dbToPlace);
+    syncApprovedSubmissions();
   } catch(e) {
     console.warn('[Spothan] loadPlaces failed, trying localStorage fallback:', e);
     try { const r = localStorage.getItem(STORAGE_KEY); if (r) places = JSON.parse(r); } catch(_) {}
@@ -909,7 +922,11 @@ function initRealtime() {
           if (record.device_id === DEVICE_ID) {
             queueApprovedNotification(record.name);
             checkApprovedNotifications();
+            pendingPlaces = pendingPlaces.filter(x => x.id !== record.id);
+            if (pendingMarkers[record.id]) { map.removeLayer(pendingMarkers[record.id]); delete pendingMarkers[record.id]; }
           }
+          syncApprovedSubmissions();
+          renderActivityPanel();
         }
       }
       if (record.status === 'deleted') {
@@ -919,6 +936,8 @@ function initRealtime() {
           const p = places.splice(idx, 1)[0];
           if (markers[p.id]) { clusterGroup.removeLayer(markers[p.id]); delete markers[p.id]; }
           updateCount(places.filter(x => !isExpired(x)).length);
+          syncApprovedSubmissions();
+          renderActivityPanel();
         }
       }
     });
@@ -979,7 +998,165 @@ let userVotes = {};
 try { const r = localStorage.getItem(VOTES_KEY); if (r) userVotes = JSON.parse(r); } catch(e) {}
 function saveVotes() { try { localStorage.setItem(VOTES_KEY, JSON.stringify(userVotes)); } catch(e) {} }
 
+let voteLocks = {};
+try { const r = localStorage.getItem(VOTE_LOCK_KEY); if (r) voteLocks = JSON.parse(r); } catch(e) {}
+function saveVoteLocks() { try { localStorage.setItem(VOTE_LOCK_KEY, JSON.stringify(voteLocks)); } catch(e) {} }
+
+let approvedSubmissions = [];
+try { const r = localStorage.getItem(APPROVED_SUBMISSIONS_KEY); if (r) approvedSubmissions = JSON.parse(r); } catch(e) {}
+function saveApprovedSubmissions() { try { localStorage.setItem(APPROVED_SUBMISSIONS_KEY, JSON.stringify(approvedSubmissions)); } catch(e) {} }
+
+function getVoteLock(id) {
+  return voteLocks[String(id)] || null;
+}
+function rememberVoteLock(p, dir, ts) {
+  voteLocks[String(p.id)] = {
+    lastDir: dir,
+    lastTs: ts,
+    placeName: p.name,
+    placeEmoji: p.emoji,
+    placeCat: p.cat,
+    address: p.address || ''
+  };
+  saveVoteLocks();
+}
+function getVoteSwitchRemaining(id, nextDir) {
+  const lock = getVoteLock(id);
+  const current = userVotes[id] || null;
+  const legacyTs = userVotes[`${id}_ts`] || 0;
+  const lastDir = lock?.lastDir || current || null;
+  const lastTs = lock?.lastTs || legacyTs;
+  if (!lastDir || !lastTs) return 0;
+  const remaining = VOTE_COOLDOWN - (now() - lastTs);
+  if (remaining <= 0) return 0;
+  if (current) return current !== nextDir ? remaining : 0;
+  return lastDir !== nextDir ? remaining : 0;
+}
+function removeOwnVoteFromPlace(p, dir, expectedTs) {
+  let idx = -1;
+  if (expectedTs) {
+    idx = p.votes.findIndex(v => v.dir === dir && Math.abs((v.ts || 0) - expectedTs) < 2000);
+  }
+  if (idx < 0) idx = p.votes.findLastIndex(v => v.dir === dir && v.device === DEVICE_ID);
+  if (idx < 0) idx = p.votes.findLastIndex(v => v.dir === dir && v.ts > now() - 60000);
+  if (idx >= 0) p.votes.splice(idx, 1);
+}
+function syncApprovedSubmissions() {
+  approvedSubmissions = places
+    .filter(p => p.deviceId === DEVICE_ID)
+    .map(p => ({
+      id: p.id,
+      name: p.name,
+      emoji: p.emoji,
+      cat: p.cat,
+      address: p.address || '',
+      approvedAt: p.submittedAt || now()
+    }))
+    .sort((a, b) => b.approvedAt - a.approvedAt);
+  saveApprovedSubmissions();
+}
+function formatActivityTime(ts) {
+  if (!ts) return 'Saved on this device';
+  return new Date(ts).toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+function getVoteActivityItems() {
+  return Object.keys(voteLocks)
+    .filter(k => /^\d+$/.test(k))
+    .map(k => {
+      const id = Number(k);
+      const p = places.find(x => x.id === id);
+      const lock = getVoteLock(id) || {};
+      const activeDir = userVotes[k] || null;
+      return {
+        id,
+        dir: activeDir || lock.lastDir || 'up',
+        active: Boolean(activeDir),
+        ts: userVotes[`${k}_ts`] || lock.lastTs || 0,
+        name: p?.name || lock.placeName || `Place #${id}`,
+        emoji: p?.emoji || lock.placeEmoji || '📍',
+        cat: p?.cat || lock.placeCat || '',
+        address: p?.address || lock.address || ''
+      };
+    })
+    .sort((a, b) => b.ts - a.ts);
+}
+function renderActivityPanel() {
+  const host = document.getElementById('activityPanel');
+  if (!host) return;
+  const votes = getVoteActivityItems();
+  const subs = approvedSubmissions.slice();
+
+  const voteHtml = votes.length
+    ? votes.map(v => `
+      <div class="activity-item">
+        <div class="activity-icon">${esc(v.emoji)}</div>
+        <div class="activity-copy">
+          <div class="activity-name">${esc(v.name)}</div>
+          <div class="activity-meta">${esc(v.address || v.cat || 'Vote saved on this device')}${v.active ? '' : ' · vote currently removed'}</div>
+          <div class="activity-badge ${v.dir === 'up' ? 'up' : 'dn'}">${v.dir === 'up' ? '👍 Last upvote' : '👎 Last downvote'} · ${esc(formatActivityTime(v.ts))}</div>
+        </div>
+      </div>
+    `).join('')
+    : `<div class="activity-empty">Votes you cast on this device will show up here.</div>`;
+
+  const subHtml = subs.length
+    ? subs.map(s => `
+      <div class="activity-item">
+        <div class="activity-icon">${esc(s.emoji || '📍')}</div>
+        <div class="activity-copy">
+          <div class="activity-name">${esc(s.name)}</div>
+          <div class="activity-meta">${esc(s.address || s.cat || 'Approved submission')}</div>
+          <div class="activity-badge up">✅ Approved · ${esc(formatActivityTime(s.approvedAt))}</div>
+        </div>
+      </div>
+    `).join('')
+    : `<div class="activity-empty">Approved places from this device will appear here after review.</div>`;
+
+  host.innerHTML = `
+    <div class="activity-grid">
+      <div class="activity-col">
+        <div class="activity-title">Your votes</div>
+        <div class="activity-list">${voteHtml}</div>
+      </div>
+      <div class="activity-col">
+        <div class="activity-title">Approved submissions</div>
+        <div class="activity-list">${subHtml}</div>
+      </div>
+    </div>
+  `;
+}
+
 // ── SUBMISSION RATE LIMIT — max 3 per hour per device ──
+renderActivityPanel = function() {
+  const host = document.getElementById('activityPanel');
+  if (!host) return;
+  const voteCount = Object.keys(voteLocks).filter(k => /^\d+$/.test(k)).length;
+  const submissionCount = approvedSubmissions.length;
+
+  host.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">👍</div>
+        <div class="stat-label">Votes given</div>
+        <div class="stat-value">${voteCount}</div>
+        <div class="stat-note">Every vote helps shape what rises to the top.</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">✅</div>
+        <div class="stat-label">Approved spots</div>
+        <div class="stat-value">${submissionCount}</div>
+        <div class="stat-note">Reviewed submissions from this device that made it onto the map.</div>
+      </div>
+    </div>
+    <div class="stats-footnote">Your progress is saved on this device and can later be connected to rewards, streaks, or contributor levels.</div>
+  `;
+}
+
 let submitLog = [];
 try { const r = localStorage.getItem(SUBMIT_LOG_KEY); if (r) submitLog = JSON.parse(r); } catch(e) {}
 function canSubmit() {
@@ -1256,13 +1433,10 @@ function closeSheet() {
 function castVote(id, dir) {
   const p = places.find(x => x.id === id); if (!p) return;
   const prev = userVotes[id];
-  const VOTE_COOLDOWN = 10 * 60 * 1000;
-  if (prev !== dir) {
-    const lastVoteTs = userVotes[`${id}_ts`] || 0;
-    if (prev && (now() - lastVoteTs) < VOTE_COOLDOWN) {
-      const mins = Math.ceil((VOTE_COOLDOWN - (now() - lastVoteTs)) / 60000);
-      showToast(`⏳ Wait ${mins} min before changing your vote`); return;
-    }
+  const switchRemaining = prev !== dir ? getVoteSwitchRemaining(id, dir) : 0;
+  if (switchRemaining > 0) {
+    const mins = Math.ceil(switchRemaining / 60000);
+    showToast(`⏳ Wait ${mins} min before changing your vote`); return;
   }
   if (prev === dir) {
     // Toggle off — remove vote
@@ -1297,6 +1471,48 @@ function castVote(id, dir) {
 }
 
 // ── SUBMIT — places go to pending queue first, not live ──
+castVote = function(id, dir) {
+  const p = places.find(x => x.id === id); if (!p) return;
+  const prev = userVotes[id];
+  const switchRemaining = prev !== dir ? getVoteSwitchRemaining(id, dir) : 0;
+  if (switchRemaining > 0) {
+    const mins = Math.ceil(switchRemaining / 60000);
+    showToast(`⏳ Wait ${mins} min before changing your vote`); return;
+  }
+
+  const actionTs = now();
+  if (prev === dir) {
+    const rememberedTs = userVotes[`${id}_ts`] || getVoteLock(id)?.lastTs || actionTs;
+    if (!getVoteLock(id)?.lastTs) rememberVoteLock(p, dir, rememberedTs);
+    removeOwnVoteFromPlace(p, dir, rememberedTs);
+    delete userVotes[id];
+    delete userVotes[`${id}_ts`];
+  } else {
+    if (prev) removeOwnVoteFromPlace(p, prev, userVotes[`${id}_ts`] || getVoteLock(id)?.lastTs || 0);
+    p.votes.push({ ts: actionTs, dir, device: DEVICE_ID });
+    userVotes[id] = dir;
+    userVotes[`${id}_ts`] = actionTs;
+    rememberVoteLock(p, dir, actionTs);
+  }
+
+  saveVotes();
+  renderActivityPanel();
+  sb.rpc('cast_vote', { p_place_id: id, p_dir: userVotes[id] || null, p_ts: actionTs, p_device: DEVICE_ID })
+    .catch(e => console.warn('[Spothan] Vote sync failed:', e));
+
+  const ws = wScore(p), raw = rawCounts(p), pct = Math.round(ws.ratio * 100);
+  const g = i => document.getElementById(i);
+  if (g(`vF${id}`)) g(`vF${id}`).style.width = pct + '%';
+  if (g(`uC${id}`)) g(`uC${id}`).textContent = raw.up;
+  if (g(`dC${id}`)) g(`dC${id}`).textContent = raw.dn;
+  if (g(`vP${id}`)) g(`vP${id}`).textContent = pct + '% liked';
+  if (g(`vU${id}`)) g(`vU${id}`).classList.toggle('voted', userVotes[id] === 'up');
+  if (g(`vD${id}`)) g(`vD${id}`).classList.toggle('voted', userVotes[id] === 'dn');
+  refreshMarker(p);
+  markEngaged();
+  showToast(prev === dir ? 'Vote removed' : (dir === 'up' ? '👍 Upvoted!' : '👎 Downvoted'));
+}
+
 async function submitPlace() {
   const name = document.getElementById('pName').value.trim();
   if (!name) { showToast('Please enter a name 🙏'); return; }
@@ -2208,6 +2424,8 @@ async function approvePlace(id) {
     if (pendingMarkers[p.id]) { map.removeLayer(pendingMarkers[p.id]); delete pendingMarkers[p.id]; }
     places.push(p);
     queueApprovedNotification(p.name);
+    syncApprovedSubmissions();
+    renderActivityPanel();
     applySort(); renderRpPending(); renderRpLive();
     showToast(`"${p.name}" is now live! 🎉`);
   } catch(e) { showToast('Could not approve — check your connection'); }
@@ -2230,6 +2448,7 @@ function showOnboardingIfFirst() {
   if (localStorage.getItem(ONBOARD_KEY)) return;
   // Show after a short delay so the map renders first
   setTimeout(() => {
+    localStorage.setItem(ONBOARD_KEY, '1');
     document.getElementById('onboardOverlay').style.display = 'flex';
   }, 1800);
 }
@@ -2243,6 +2462,7 @@ function dismissOnboarding() {
 
 // ── INSTALL PROMPT (beforeinstallprompt) ──
 let deferredInstallPrompt = null;
+const INSTALL_SEEN_KEY = 'spothan_install_seen_v1';
 
 // Detect iOS Safari
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -2251,9 +2471,11 @@ const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').match
 // Show iOS-specific instructions since beforeinstallprompt doesn't work on iOS
 function showIOSInstallBanner() {
   if (!isIOS || isInStandaloneMode) return;
+  if (localStorage.getItem(INSTALL_SEEN_KEY)) return;
   if (localStorage.getItem('spothan_install_dismissed_v1')) return;
   const hasEngaged = localStorage.getItem('spothan_engaged_v1');
   if (!hasEngaged) return;
+  localStorage.setItem(INSTALL_SEEN_KEY, '1');
   document.getElementById('iosBanner').style.display = 'flex';
 }
 
@@ -2261,10 +2483,10 @@ window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   deferredInstallPrompt = e;
   if (localStorage.getItem('spothan_install_dismissed_v1')) return;
-  if (localStorage.getItem('spothan_install_shown_v1')) return; // already shown once
+  if (localStorage.getItem(INSTALL_SEEN_KEY)) return;
   const hasEngaged = localStorage.getItem('spothan_engaged_v1');
-  if (hasEngaged && !isInStandaloneMode) {
-    localStorage.setItem('spothan_install_shown_v1', '1');
+  if (hasEngaged && !isInStandaloneMode && !isIOS) {
+    localStorage.setItem(INSTALL_SEEN_KEY, '1');
     document.getElementById('installBanner').style.display = 'flex';
   }
 });
@@ -2288,7 +2510,8 @@ document.addEventListener('DOMContentLoaded', () => {
 function markEngaged() {
   if (!localStorage.getItem('spothan_engaged_v1')) {
     localStorage.setItem('spothan_engaged_v1', '1');
-    if (deferredInstallPrompt && !isInStandaloneMode) {
+    if (deferredInstallPrompt && !isInStandaloneMode && !isIOS && !localStorage.getItem(INSTALL_SEEN_KEY) && !localStorage.getItem('spothan_install_dismissed_v1')) {
+      localStorage.setItem(INSTALL_SEEN_KEY, '1');
       setTimeout(() => document.getElementById('installBanner').style.display = 'flex', 1000);
     }
     // Show iOS banner if on iPhone/iPad
@@ -2306,7 +2529,7 @@ function openAboutPanel() {
   const dismissed = localStorage.getItem('spothan_install_dismissed_v1');
 
   if (!isStandalone) {
-    if (deferredInstallPrompt && !dismissed) {
+    if (deferredInstallPrompt && !dismissed && !isIOS) {
       section.innerHTML = `<div style="background:#fff8f6;border:1.5px solid var(--accent);border-radius:12px;padding:14px;margin-bottom:14px;">
         <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px;">📲 Install Spothan</div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Add to your home screen for the best experience — works offline too.</div>
@@ -2324,6 +2547,7 @@ function openAboutPanel() {
     section.innerHTML = `<div style="background:#e6faf2;border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--nature);font-weight:600;">✅ App installed on your device</div>`;
   }
 
+  renderActivityPanel();
   document.getElementById('aboutOverlay').classList.add('on');
 }
 
@@ -2394,7 +2618,7 @@ showOnboardingIfFirst();
     <button id="locConfirmNo"  style="flex:1;padding:11px;background:var(--warm);color:var(--ink2);border:none;border-radius:11px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">🔍 Search again</button>
   </div>
 </div>
-<div id="onboardOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(13,13,13,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:flex-end;justify-content:center;padding:0 0 env(safe-area-inset-bottom,0)">
+<div id="onboardOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(13,13,13,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);align-items:flex-end;justify-content:center;padding:0 0 env(safe-area-inset-bottom,0)">
   <div style="background:var(--surface);border-radius:28px 28px 0 0;padding:28px 24px 36px;max-width:480px;width:100%;box-shadow:0 -8px 40px rgba(0,0,0,.18)">
     <div style="text-align:center;margin-bottom:22px">
       <div style="font-size:38px;margin-bottom:10px">🗺️</div>
@@ -2440,7 +2664,7 @@ showOnboardingIfFirst();
 </div>
 
 <!-- ── INSTALL PROMPT BANNER ── -->
-<div id="installBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9998;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0));background:var(--surface);border-top:1.5px solid var(--warm);box-shadow:0 -4px 24px rgba(0,0,0,.10);display:flex;align-items:center;gap:12px">
+<div id="installBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9998;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0));background:var(--surface);border-top:1.5px solid var(--warm);box-shadow:0 -4px 24px rgba(0,0,0,.10);align-items:center;gap:12px">
   <div style="font-size:28px">📲</div>
   <div style="flex:1;min-width:0">
     <div style="font-size:13px;font-weight:700;color:var(--ink)">Add Spothan to your home screen</div>
@@ -2476,6 +2700,8 @@ showOnboardingIfFirst();
         <div style="font-size:13px;color:var(--ink2);"><strong style="color:var(--ink);">Share any spot</strong><br>Every place has its own link — send it to a friend instantly</div>
       </div>
     </div>
+    <div class="about-section-label">This device</div>
+    <div id="activityPanel"></div>
     <div id="aboutInstallSection"></div>
     <button onclick="closeAboutPanel()" style="width:100%;padding:13px;background:var(--ink);color:white;border:none;border-radius:12px;font-family:'Bricolage Grotesque',sans-serif;font-size:14px;font-weight:700;cursor:pointer;">Got it ✓</button>
   </div>
