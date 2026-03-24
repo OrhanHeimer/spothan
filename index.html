@@ -61,7 +61,7 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 /* About panel */
 .about-overlay{position:fixed;inset:0;background:rgba(13,13,13,.52);z-index:9800;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .28s;}
 .about-overlay.on{opacity:1;pointer-events:all;}
-.about-modal{background:var(--surface);border-radius:22px 22px 0 0;padding:22px 18px 38px;width:100%;max-width:480px;transform:translateY(100%);transition:transform .36s cubic-bezier(.32,.72,0,1);padding-bottom:max(38px,calc(env(safe-area-inset-bottom,0px) + 24px));}
+.about-modal{background:var(--surface);border-radius:22px 22px 0 0;padding:22px 18px 38px;width:100%;max-width:480px;max-height:min(88dvh,88vh);overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateY(100%);transition:transform .36s cubic-bezier(.32,.72,0,1);padding-bottom:max(38px,calc(env(safe-area-inset-bottom,0px) + 24px));}
 .about-overlay.on .about-modal{transform:translateY(0);}
 .about-section-label{font-size:10px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);margin:18px 0 8px;}
 .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
