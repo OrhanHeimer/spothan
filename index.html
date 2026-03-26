@@ -395,6 +395,18 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .splash-locating{display:flex;align-items:center;gap:9px;font-family:'Instrument Sans',sans-serif;font-size:13px;color:rgba(255,255,255,.6);margin-top:8px;}
 .splash-spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.2);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
+
+/* ── EMAIL COLLECTION MODAL ── */
+.email-overlay{position:fixed;inset:0;background:rgba(13,13,13,.6);z-index:9600;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .3s;}
+.email-overlay.on{opacity:1;pointer-events:all;}
+.email-modal{background:var(--surface);border-radius:22px 22px 0 0;padding:28px 20px;width:100%;max-width:480px;transform:translateY(100%);transition:transform .36s cubic-bezier(.32,.72,0,1);padding-bottom:max(28px,calc(env(safe-area-inset-bottom,0px) + 20px));}
+.email-overlay.on .email-modal{transform:translateY(0);}
+.email-input{width:100%;padding:12px 14px;border:2px solid var(--warm);border-radius:11px;font-family:'Instrument Sans',sans-serif;font-size:15px;color:var(--ink);background:var(--bg);outline:none;transition:border-color .2s;margin:14px 0 10px;}
+.email-input:focus{border-color:var(--ink);background:white;}
+.email-submit{width:100%;padding:13px;background:var(--accent);color:white;border:none;border-radius:12px;font-family:'Bricolage Grotesque',sans-serif;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:8px;transition:opacity .2s;}
+.email-submit:hover{opacity:.88;}
+.email-skip{width:100%;padding:10px;background:none;border:none;font-family:'Instrument Sans',sans-serif;font-size:13px;color:var(--muted);cursor:pointer;}
+.email-dontask{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;margin-top:6px;justify-content:center;}
 </style>
 </head>
 <body>
@@ -897,7 +909,13 @@ function checkApprovedNotifications() {
   const name = q[0];
   const extra = q.length > 1 ? ` (+${q.length-1} more)` : '';
   document.getElementById('approvedBannerTitle').textContent = `"${name}" is now live!${extra}`;
-  document.getElementById('approvedBannerSub').textContent = 'Your submission was approved — it\'s now visible to everyone on the map 🗺';
+  // Count total upvotes received on this device's approved submissions
+  const myPlaces = places.filter(p => p.deviceId === DEVICE_ID);
+  const totalLikes = myPlaces.reduce((sum, p) => sum + rawCounts(p).up, 0);
+  const likesText = totalLikes > 0
+    ? `Your approved submissions have been liked ${totalLikes} time${totalLikes !== 1 ? 's' : ''} 👍`
+    : 'Your submission was approved — it\'s now visible to everyone on the map 🗺';
+  document.getElementById('approvedBannerSub').textContent = likesText;
   const banner = document.getElementById('approvedBanner');
   banner.classList.add('on');
   document.getElementById('approvedBannerClose').onclick = () => banner.classList.remove('on');
@@ -1131,7 +1149,8 @@ function renderActivityPanel() {
   `;
 }
 
-// ── SUBMISSION RATE LIMIT — max 3 per hour per device ──
+// ── SUBMISSION RATE LIMIT — adjustable constant ──
+const MAX_SUBMISSIONS_PER_HOUR = 10; // change this to adjust the limit
 renderActivityPanel = function() {
   const host = document.getElementById('activityPanel');
   if (!host) return;
@@ -1162,7 +1181,7 @@ try { const r = localStorage.getItem(SUBMIT_LOG_KEY); if (r) submitLog = JSON.pa
 function canSubmit() {
   const oneHourAgo = now() - 3600000;
   submitLog = submitLog.filter(ts => ts > oneHourAgo); // prune old entries
-  return submitLog.length < 3;
+  return submitLog.length < MAX_SUBMISSIONS_PER_HOUR;
 }
 function logSubmit() {
   submitLog.push(now());
@@ -1519,7 +1538,7 @@ async function submitPlace() {
   if (name.length > 80) { showToast('Name too long — max 80 characters'); return; }
   const desc = document.getElementById('pDesc').value.trim();
   if (desc.length > 400) { showToast('Description too long — max 400 characters'); return; }
-  if (!canSubmit()) { showToast('⏳ Max 3 submissions per hour — try again later'); return; }
+  if (!canSubmit()) { showToast(`⏳ Max ${MAX_SUBMISSIONS_PER_HOUR} submissions per hour — try again later`); return; }
   const addrVal = document.getElementById('pAddr').value.trim().toLowerCase();
   const isDup = places.find(p => sim(p.name, name) > .85 && sim(p.address || '', addrVal) > .75);
   const isPendingDup = pendingPlaces.find(p => sim(p.name, name) > .85 && sim(p.address || '', addrVal) > .75);
@@ -1761,9 +1780,10 @@ function bindUI() {
   });
 }
 
-function openModal(){document.getElementById('overlay').classList.add('on');}
+function openModal(){document.getElementById('overlay').classList.add('on');document.getElementById('emptyState').style.visibility='hidden';}
 function closeModal(){
   document.getElementById('overlay').classList.remove('on');
+  document.getElementById('emptyState').style.visibility='';
   ['pName','pAddr','pDesc','pStart','pEnd'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('dupWarn').classList.remove('show');
   document.getElementById('locConfirm').style.display = 'none';
@@ -2510,6 +2530,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function markEngaged() {
   if (!localStorage.getItem('spothan_engaged_v1')) {
     localStorage.setItem('spothan_engaged_v1', '1');
+    setTimeout(showEmailModalIfAppropriate, 4000); // show email prompt 4s after first engagement
     if (deferredInstallPrompt && !isInStandaloneMode && !isIOS && !localStorage.getItem(INSTALL_SEEN_KEY) && !localStorage.getItem('spothan_install_dismissed_v1')) {
       localStorage.setItem(INSTALL_SEEN_KEY, '1');
       setTimeout(() => document.getElementById('installBanner').style.display = 'flex', 1000);
@@ -2569,6 +2590,64 @@ async function installFromAbout() {
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('aboutOverlay').addEventListener('click', e => {
     if (e.target === document.getElementById('aboutOverlay')) closeAboutPanel();
+  });
+});
+
+
+// ── EMAIL COLLECTION ──
+const EMAIL_KEY         = 'spothan_email_v1';        // stored email
+const EMAIL_ASKED_KEY   = 'spothan_email_asked_v1';  // asked before?
+const EMAIL_DONTASK_KEY = 'spothan_email_dontask_v1';// user said don't ask
+
+function showEmailModalIfAppropriate() {
+  if (localStorage.getItem(EMAIL_KEY)) return;          // already submitted
+  if (localStorage.getItem(EMAIL_DONTASK_KEY)) return;  // user opted out
+  if (localStorage.getItem(EMAIL_ASKED_KEY)) return;    // already shown once this session
+  // Show after user has engaged (voted or submitted)
+  const hasEngaged = localStorage.getItem('spothan_engaged_v1');
+  if (!hasEngaged) return;
+  localStorage.setItem(EMAIL_ASKED_KEY, '1');
+  setTimeout(() => document.getElementById('emailOverlay').classList.add('on'), 1500);
+}
+
+function closeEmailModal(dontAsk) {
+  if (dontAsk || document.getElementById('emailDontAsk').checked) {
+    localStorage.setItem(EMAIL_DONTASK_KEY, '1');
+  }
+  document.getElementById('emailOverlay').classList.remove('on');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('emailSubmitBtn').addEventListener('click', async () => {
+    const email = document.getElementById('emailInput').value.trim();
+    if (!email || !email.includes('@')) {
+      showToast('Please enter a valid email address');
+      return;
+    }
+    const btn = document.getElementById('emailSubmitBtn');
+    btn.textContent = 'Saving…'; btn.disabled = true;
+    try {
+      await sb.insert('emails', {
+        email,
+        device_id: DEVICE_ID,
+        created_at: new Date().toISOString()
+      });
+      localStorage.setItem(EMAIL_KEY, email);
+      closeEmailModal(false);
+      showToast('Thanks! We\'ll keep you posted 🙌');
+    } catch(e) {
+      // Save locally as fallback even if Supabase fails
+      localStorage.setItem(EMAIL_KEY, email);
+      closeEmailModal(false);
+      showToast('Thanks! We\'ll keep you posted 🙌');
+      console.warn('[Spothan] Email save to Supabase failed:', e);
+    } finally {
+      btn.textContent = 'Count me in →'; btn.disabled = false;
+    }
+  });
+
+  document.getElementById('emailOverlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('emailOverlay')) closeEmailModal(false);
   });
 });
 
@@ -2704,6 +2783,22 @@ showOnboardingIfFirst();
     <div id="activityPanel"></div>
     <div id="aboutInstallSection"></div>
     <button onclick="closeAboutPanel()" style="width:100%;padding:13px;background:var(--ink);color:white;border:none;border-radius:12px;font-family:'Bricolage Grotesque',sans-serif;font-size:14px;font-weight:700;cursor:pointer;">Got it ✓</button>
+  </div>
+</div>
+
+<!-- ── EMAIL COLLECTION MODAL ── -->
+<div class="email-overlay" id="emailOverlay">
+  <div class="email-modal">
+    <div style="font-size:28px;margin-bottom:8px;">💌</div>
+    <div style="font-family:'Bricolage Grotesque',sans-serif;font-size:20px;font-weight:800;color:var(--ink);margin-bottom:6px;">Stay in the loop</div>
+    <div style="font-size:13px;color:var(--ink2);line-height:1.6;margin-bottom:4px;">Leave your email for updates, new features, and opportunities to shape Spothan.</div>
+    <input class="email-input" id="emailInput" type="email" placeholder="your@email.com" autocomplete="email">
+    <button class="email-submit" id="emailSubmitBtn">Count me in →</button>
+    <button class="email-skip" onclick="closeEmailModal(false)">Maybe later</button>
+    <label class="email-dontask">
+      <input type="checkbox" id="emailDontAsk" style="accent-color:var(--accent);">
+      Don't ask me again
+    </label>
   </div>
 </div>
 </body>
