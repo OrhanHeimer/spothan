@@ -130,6 +130,52 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .sort-opt:last-child{border-bottom:none;}
 .sort-opt:hover{background:var(--bg);}
 .sort-opt.active{font-weight:700;color:var(--accent);}
+/* Admin mode banner */
+.admin-bar{position:fixed;top:0;left:0;right:0;z-index:9000;background:linear-gradient(90deg,#1a0a00,#3a1000);color:white;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;box-shadow:0 2px 16px rgba(255,60,0,.3);transform:translateY(-100%);transition:transform .3s cubic-bezier(.32,.72,0,1);}
+.admin-bar.on{transform:translateY(0);}
+.admin-bar-left{display:flex;align-items:center;gap:10px;}
+.admin-bar-badge{background:var(--accent);color:white;border-radius:50px;font-size:10px;font-weight:800;padding:2px 8px;letter-spacing:.5px;text-transform:uppercase;}
+.admin-bar-label{font-family:'Bricolage Grotesque',sans-serif;font-size:13px;font-weight:700;color:#ffcfbb;}
+.admin-bar-hint{font-size:11px;color:#b06040;}
+.admin-bar-close{background:rgba(255,255,255,.12);border:none;color:white;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;}
+.admin-bar-close:hover{background:rgba(255,255,255,.22);}
+/* Admin pending map pins */
+.map-pin-admin-pending{width:42px;height:42px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;box-shadow:0 3px 14px rgba(255,60,0,.5);border:3px solid #ff3c00;cursor:pointer;position:relative;background:#fff0eb;animation:pinDrop .32s ease both;}
+.admin-pending-ring{position:absolute;inset:-6px;border-radius:50% 50% 50% 0;border:2.5px dashed #ff3c00;animation:adminRing 1.5s linear infinite;}
+@keyframes adminRing{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+/* Admin popup styles */
+.admin-popup{padding:14px 16px;min-width:240px;max-width:280px;}
+.admin-popup-title{font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:15px;color:var(--ink);margin-bottom:2px;}
+.admin-popup-meta{font-size:11px;color:var(--muted);margin-bottom:10px;}
+.admin-popup-field{margin-bottom:8px;}
+.admin-popup-label{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:3px;}
+.admin-popup-input{width:100%;border:1.5px solid var(--warm);border-radius:8px;padding:6px 9px;font-family:'Instrument Sans',sans-serif;font-size:13px;color:var(--ink);background:var(--bg);outline:none;box-sizing:border-box;}
+.admin-popup-input:focus{border-color:var(--accent);}
+.admin-popup-textarea{width:100%;border:1.5px solid var(--warm);border-radius:8px;padding:6px 9px;font-family:'Instrument Sans',sans-serif;font-size:13px;color:var(--ink);background:var(--bg);outline:none;box-sizing:border-box;resize:vertical;min-height:56px;}
+.admin-popup-textarea:focus{border-color:var(--accent);}
+.admin-popup-cat{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;}
+.admin-popup-cat-opt{font-size:11px;padding:3px 9px;border-radius:50px;border:1.5px solid var(--warm);cursor:pointer;background:var(--bg);color:var(--ink2);}
+.admin-popup-cat-opt.sel{background:var(--ink);color:white;border-color:var(--ink);}
+.admin-popup-emoji-row{display:flex;align-items:center;gap:7px;margin-bottom:8px;}
+.admin-popup-emoji-input{width:52px;border:1.5px solid var(--warm);border-radius:8px;padding:5px 7px;font-size:18px;text-align:center;outline:none;background:var(--bg);}
+.admin-popup-actions{display:flex;gap:7px;margin-top:4px;}
+.admin-popup-approve{flex:1;padding:8px;background:var(--green);color:white;border:none;border-radius:9px;font-weight:700;font-size:12px;cursor:pointer;}
+.admin-popup-reject{padding:8px 12px;background:#ffe8e4;color:var(--accent);border:none;border-radius:9px;font-weight:700;font-size:12px;cursor:pointer;}
+.admin-popup-save{flex:1;padding:8px;background:var(--acts);color:white;border:none;border-radius:9px;font-weight:700;font-size:12px;cursor:pointer;}
+.admin-popup-delete{padding:8px 12px;background:#ffe8e4;color:var(--accent);border:none;border-radius:9px;font-weight:700;font-size:12px;cursor:pointer;}
+.admin-popup-section{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid var(--warm);}
+/* Pending edit form in review panel */
+.rp-pending-edit-form{display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--warm);}
+.rp-pending-edit-form.open{display:block;}
+.rp-pending-edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
+.rp-pending-edit-cat{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;}
+.rp-pending-edit-cat-opt{font-size:11px;padding:4px 10px;border-radius:50px;border:1.5px solid var(--warm);cursor:pointer;background:var(--bg);color:var(--ink2);transition:all .15s;}
+.rp-pending-edit-cat-opt.sel{background:var(--ink);color:white;border-color:var(--ink);}
+.rp-pending-emoji-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.rp-pending-emoji-input{width:52px;border:1.5px solid var(--warm);border-radius:8px;padding:5px 7px;font-size:18px;text-align:center;outline:none;background:var(--bg);}
+.rp-pending-edit-actions{display:flex;gap:8px;margin-top:8px;}
+.rp-pending-save{flex:1;padding:9px;background:var(--green);color:white;border:none;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer;}
+.rp-pending-cancel-edit{padding:9px 14px;background:var(--warm);border:none;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer;color:var(--ink2);}
 /* Pins */
 .map-pin{width:38px;height:38px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(0,0,0,.25);border:2.5px solid white;cursor:pointer;position:relative;animation:pinDrop .32s ease both;}
 .map-pin-inner{transform:rotate(45deg);font-size:15px;}
@@ -616,12 +662,27 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
   </div>
 </div>
 
+<!-- ── ADMIN MODE BAR ── -->
+<div class="admin-bar" id="adminBar">
+  <div class="admin-bar-left">
+    <div class="admin-bar-badge">⚙ Admin</div>
+    <div>
+      <div class="admin-bar-label">Admin Mode Active</div>
+      <div class="admin-bar-hint">Click any pin to edit · pending submissions highlighted</div>
+    </div>
+  </div>
+  <button class="admin-bar-close" onclick="exitAdminMode()">Exit Admin ✕</button>
+</div>
+
 <!-- ── ADMIN REVIEW PANEL (open via #review) ── -->
 <div id="reviewPanel" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(13,13,13,.88);overflow:auto;padding:20px;">
   <div class="rp-wrap">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:8px;">
       <span style="font-family:'Bricolage Grotesque',sans-serif;font-size:20px;font-weight:800;">🔐 Admin Review</span>
-      <button onclick="closeReviewPanel()" style="padding:8px 16px;background:var(--warm);border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px;">✕ Close</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button id="rpMapModeBtn" onclick="toggleReviewMapMode()" style="padding:8px 14px;background:var(--accent);color:white;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px;">🗺 View on Map</button>
+        <button onclick="closeReviewPanel()" style="padding:8px 16px;background:var(--warm);border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px;">✕ Close</button>
+      </div>
     </div>
     <div class="rp-tabs" style="flex-wrap:wrap;">
       <button class="rp-tab active" id="rpTabPending"  onclick="switchRpTab('pending')">📬 Submissions <span class="rp-badge"      id="rpPendingBadge">0</span></button>
@@ -1362,8 +1423,8 @@ function addMarker(p) {
   const dl=daysLeft(p);
   const eBadge=isLTPlace(p)?`<div class="cp-ebadge ${urgent?'urgent':'normal'}">${urgent?'🔴':'🟡'} ${dl===0?'Ends today':dl===1?'Ends tomorrow':`${dl} days left`}</div>`:'';
   const m=L.marker([p.lat,p.lng],{icon});
-  m.bindPopup(L.popup({closeButton:false,maxWidth:220}).setContent(`<div class="cp"><div class="cp-top"><span class="cp-emoji">${esc(p.emoji)}</span><div><div class="cp-name">${esc(p.name)}</div></div></div><div class="cp-sub">📍 ${esc(p.address)}</div>${eBadge}<div class="cp-votes"><span class="cp-up">👍 ${raw.up}</span><div class="cp-bar"><div class="cp-fill" style="width:${pct}%"></div></div><span class="cp-dn">👎 ${raw.dn}</span></div><button class="cp-btn" onclick="openSheet(${p.id})">View Details →</button></div>`));
-  m.on('click', ()=>m.openPopup());
+  m.bindPopup(L.popup({closeButton:false,maxWidth:300}).setContent(() => adminMode ? buildAdminLivePopup(p) : `<div class="cp"><div class="cp-top"><span class="cp-emoji">${esc(p.emoji)}</span><div><div class="cp-name">${esc(p.name)}</div></div></div><div class="cp-sub">📍 ${esc(p.address)}</div>${eBadge}<div class="cp-votes"><span class="cp-up">👍 ${raw.up}</span><div class="cp-bar"><div class="cp-fill" style="width:${pct}%"></div></div><span class="cp-dn">👎 ${raw.dn}</span></div><button class="cp-btn" onclick="openSheet(${p.id})">View Details →</button></div>`));
+  m.on('click', () => { m.setPopupContent(adminMode ? buildAdminLivePopup(p) : `<div class="cp"><div class="cp-top"><span class="cp-emoji">${esc(p.emoji)}</span><div><div class="cp-name">${esc(p.name)}</div></div></div><div class="cp-sub">📍 ${esc(p.address)}</div>${eBadge}<div class="cp-votes"><span class="cp-up">👍 ${raw.up}</span><div class="cp-bar"><div class="cp-fill" style="width:${pct}%"></div></div><span class="cp-dn">👎 ${raw.dn}</span></div><button class="cp-btn" onclick="openSheet(${p.id})">View Details →</button></div>`); m.openPopup(); });
   markers[p.id]=m;
   clusterGroup.addLayer(m);
 }
@@ -2304,6 +2365,250 @@ function initReportModal() {
   });
 }
 
+// ── ADMIN STATE ──
+let adminMode = false;
+let adminPendingMarkers = {}; // separate from user's pendingMarkers
+let reviewMapMode = false;
+
+function enterAdminMode() {
+  adminMode = true;
+  document.getElementById('adminBar').classList.add('on');
+  document.body.style.paddingTop = '';
+  // Make live markers clickable for editing
+  rebuildMarkersForAdmin();
+}
+
+function exitAdminMode() {
+  adminMode = false;
+  reviewMapMode = false;
+  document.getElementById('adminBar').classList.remove('on');
+  // Remove admin pending markers
+  Object.values(adminPendingMarkers).forEach(m => map.removeLayer(m));
+  adminPendingMarkers = {};
+  // Rebuild normal markers
+  rebuildMarkersForAdmin();
+  // If review panel is hidden, also remove the hash
+  history.replaceState(null, '', location.pathname);
+}
+
+function rebuildMarkersForAdmin() {
+  // Rebuild all live markers so click handlers respect adminMode
+  clusterGroup.clearLayers();
+  Object.keys(markers).forEach(k => delete markers[k]);
+  const list = places.filter(p => !isExpired(p) && (activeFilter==='all' || p.cat===activeFilter));
+  list.forEach((p,i) => setTimeout(() => addMarker(p), i * 15));
+}
+
+function toggleReviewMapMode() {
+  reviewMapMode = !reviewMapMode;
+  const btn = document.getElementById('rpMapModeBtn');
+  if (reviewMapMode) {
+    // Hide review panel, show map with pending highlights
+    document.getElementById('reviewPanel').style.display = 'none';
+    btn.textContent = '📋 Back to List';
+    // Add admin pending markers
+    pendingPlaces.forEach(p => { if (!adminPendingMarkers[p.id]) addAdminPendingMarker(p); });
+    // Fit map to pending markers if any
+    if (pendingPlaces.length) {
+      const lats = pendingPlaces.map(p => p.lat), lngs = pendingPlaces.map(p => p.lng);
+      const minLat=Math.min(...lats),maxLat=Math.max(...lats),minLng=Math.min(...lngs),maxLng=Math.max(...lngs);
+      if (minLat===maxLat && minLng===maxLng) map.setView([minLat,minLng], 16, {animate:true});
+      else map.fitBounds([[minLat,minLng],[maxLat,maxLng]], {padding:[50,50], animate:true});
+    }
+  } else {
+    // Show review panel again, remove pending admin markers
+    document.getElementById('reviewPanel').style.display = 'block';
+    btn.textContent = '🗺 View on Map';
+    Object.values(adminPendingMarkers).forEach(m => map.removeLayer(m));
+    adminPendingMarkers = {};
+  }
+}
+
+function locatePendingOnMap(id) {
+  const p = pendingPlaces.find(x => x.id === id); if (!p) return;
+  // Switch to map mode and fly to it
+  if (!reviewMapMode) toggleReviewMapMode();
+  setTimeout(() => {
+    map.setView([p.lat, p.lng], 17, {animate:true});
+    if (adminPendingMarkers[id]) setTimeout(() => adminPendingMarkers[id].openPopup(), 400);
+  }, 300);
+}
+
+function addAdminPendingMarker(p) {
+  const icon = L.divIcon({
+    className: '',
+    html: `<div class="map-pin-admin-pending">
+             <div class="admin-pending-ring"></div>
+             <div style="transform:rotate(45deg);font-size:17px">${p.emoji}</div>
+           </div>`,
+    iconSize: [42,42], iconAnchor: [21,42], popupAnchor: [0,-48]
+  });
+  const m = L.marker([p.lat, p.lng], {icon, zIndexOffset: 2000});
+  const popupContent = () => buildAdminPendingPopup(p);
+  m.bindPopup(L.popup({closeButton:false, maxWidth:300, minWidth:260}).setContent(popupContent()));
+  m.on('click', () => { m.setPopupContent(buildAdminPendingPopup(p)); m.openPopup(); });
+  adminPendingMarkers[p.id] = m;
+  m.addTo(map);
+}
+
+function buildAdminPendingPopup(p) {
+  const d = new Date(p.submittedAt).toLocaleDateString('en-GB', {day:'numeric',month:'short'});
+  const catOpts = ['food','nature','activities','events'].map(c =>
+    `<div class="admin-popup-cat-opt${p.cat===c?' sel':''}" onclick="adminPopupSetCat(this,'${c}',${p.id})" data-cat="${c}">${catEmojis[c]}</div>`
+  ).join('');
+  return `<div class="admin-popup">
+    <div class="admin-popup-section">⏳ Pending Submission</div>
+    <div class="admin-popup-field">
+      <div class="admin-popup-label">Name</div>
+      <input class="admin-popup-input" id="apName${p.id}" value="${esc(p.name)}">
+    </div>
+    <div style="display:flex;gap:8px">
+      <div class="admin-popup-field" style="flex:1">
+        <div class="admin-popup-label">Icon</div>
+        <input class="admin-popup-emoji-input" id="apEmoji${p.id}" value="${esc(p.emoji)}" maxlength="4">
+      </div>
+      <div class="admin-popup-field" style="flex:1">
+        <div class="admin-popup-label">Category</div>
+        <div class="admin-popup-cat" id="apCat${p.id}">${catOpts}</div>
+      </div>
+    </div>
+    <div class="admin-popup-field">
+      <div class="admin-popup-label">Address</div>
+      <input class="admin-popup-input" id="apAddr${p.id}" value="${esc(p.address)}">
+    </div>
+    <div class="admin-popup-field">
+      <div class="admin-popup-label">Description</div>
+      <textarea class="admin-popup-textarea" id="apDesc${p.id}">${esc(p.desc||'')}</textarea>
+    </div>
+    <div class="admin-popup-meta">Submitted ${d} · ${esc(p.address)}</div>
+    <div class="admin-popup-actions">
+      <button class="admin-popup-approve" onclick="adminApprovePending(${p.id})">✅ Approve</button>
+      <button class="admin-popup-save" style="background:var(--acts)" onclick="adminSavePendingOnly(${p.id})">💾 Save</button>
+      <button class="admin-popup-reject" onclick="adminRejectPending(${p.id})">🗑</button>
+    </div>
+  </div>`;
+}
+
+const _adminPopupCat = {};
+function adminPopupSetCat(el, cat, pid) {
+  el.closest('.admin-popup-cat').querySelectorAll('.admin-popup-cat-opt').forEach(o => o.classList.remove('sel'));
+  el.classList.add('sel');
+  _adminPopupCat[pid] = cat;
+}
+
+function _collectAdminPendingEdits(id, p) {
+  const name  = document.getElementById(`apName${id}`)?.value.trim() || p.name;
+  const emoji  = document.getElementById(`apEmoji${id}`)?.value.trim() || p.emoji;
+  const addr   = document.getElementById(`apAddr${id}`)?.value.trim() || p.address;
+  const desc   = document.getElementById(`apDesc${id}`)?.value.trim() || '';
+  const cat    = _adminPopupCat[id] || document.querySelector(`#apCat${id} .admin-popup-cat-opt.sel`)?.dataset.cat || p.cat;
+  return { name, emoji, address: addr, desc, cat };
+}
+
+async function adminSavePendingOnly(id) {
+  const p = pendingPlaces.find(x => x.id === id); if (!p) return;
+  const u = _collectAdminPendingEdits(id, p);
+  try {
+    await sb.update('places', id, { name: u.name, emoji: u.emoji, address: u.address, description: u.desc || null, category: u.cat });
+    Object.assign(p, u);
+    // Rebuild popup
+    if (adminPendingMarkers[id]) { adminPendingMarkers[id].setPopupContent(buildAdminPendingPopup(p)); }
+    renderRpPending();
+    showToast(`"${p.name}" saved ✓`);
+  } catch(e) { showToast('Could not save — check connection'); }
+}
+
+async function adminApprovePending(id) {
+  const p = pendingPlaces.find(x => x.id === id); if (!p) return;
+  const u = _collectAdminPendingEdits(id, p);
+  try {
+    await sb.update('places', id, { name: u.name, emoji: u.emoji, address: u.address, description: u.desc || null, category: u.cat, status: 'live' });
+    Object.assign(p, u); p.cat = u.cat;
+    const idx = pendingPlaces.findIndex(x => x.id === id);
+    pendingPlaces.splice(idx, 1);
+    if (adminPendingMarkers[id]) { map.removeLayer(adminPendingMarkers[id]); delete adminPendingMarkers[id]; }
+    places.push(p); addMarker(p);
+    queueApprovedNotification(p.name);
+    syncApprovedSubmissions(); renderActivityPanel(); applySort();
+    renderRpPending(); renderRpLive();
+    showToast(`"${p.name}" approved 🎉`);
+  } catch(e) { showToast('Could not approve — check connection'); }
+}
+
+async function adminRejectPending(id) {
+  map.closePopup();
+  await rejectPlace(id);
+  if (adminPendingMarkers[id]) { map.removeLayer(adminPendingMarkers[id]); delete adminPendingMarkers[id]; }
+}
+
+// ── ADMIN LIVE PLACE POPUP (clicking a pin in admin mode) ──
+function buildAdminLivePopup(p) {
+  const ws = wScore(p), raw = rawCounts(p);
+  const catOpts = ['food','nature','activities','events'].map(c =>
+    `<div class="admin-popup-cat-opt${p.cat===c?' sel':''}" onclick="adminLiveSetCat(this,'${c}',${p.id})" data-cat="${c}">${catEmojis[c]}</div>`
+  ).join('');
+  return `<div class="admin-popup">
+    <div class="admin-popup-section">✏️ Edit Live Place</div>
+    <div class="admin-popup-field">
+      <div class="admin-popup-label">Name</div>
+      <input class="admin-popup-input" id="alName${p.id}" value="${esc(p.name)}">
+    </div>
+    <div style="display:flex;gap:8px">
+      <div class="admin-popup-field" style="flex:1">
+        <div class="admin-popup-label">Icon</div>
+        <input class="admin-popup-emoji-input" id="alEmoji${p.id}" value="${esc(p.emoji)}" maxlength="4">
+      </div>
+      <div class="admin-popup-field" style="flex:1">
+        <div class="admin-popup-label">Category</div>
+        <div class="admin-popup-cat" id="alCat${p.id}">${catOpts}</div>
+      </div>
+    </div>
+    <div class="admin-popup-field">
+      <div class="admin-popup-label">Address</div>
+      <input class="admin-popup-input" id="alAddr${p.id}" value="${esc(p.address)}">
+    </div>
+    <div class="admin-popup-field">
+      <div class="admin-popup-label">Description</div>
+      <textarea class="admin-popup-textarea" id="alDesc${p.id}">${esc(p.desc||'')}</textarea>
+    </div>
+    <div class="admin-popup-meta">👍 ${raw.up} · 👎 ${raw.dn} · Score: ${Math.round(ws.score)>=0?'+':''}${Math.round(ws.score)}</div>
+    <div class="admin-popup-actions">
+      <button class="admin-popup-save" onclick="adminSaveLive(${p.id})">💾 Save</button>
+      <button class="admin-popup-delete" onclick="adminDeleteLive(${p.id})">🗑 Delete</button>
+    </div>
+  </div>`;
+}
+
+const _adminLiveCat = {};
+function adminLiveSetCat(el, cat, pid) {
+  el.closest('.admin-popup-cat').querySelectorAll('.admin-popup-cat-opt').forEach(o => o.classList.remove('sel'));
+  el.classList.add('sel');
+  _adminLiveCat[pid] = cat;
+}
+
+async function adminSaveLive(id) {
+  const p = places.find(x => x.id === id); if (!p) return;
+  const name  = document.getElementById(`alName${id}`)?.value.trim();
+  const emoji  = document.getElementById(`alEmoji${id}`)?.value.trim() || p.emoji;
+  const addr   = document.getElementById(`alAddr${id}`)?.value.trim() || p.address;
+  const desc   = document.getElementById(`alDesc${id}`)?.value.trim() || '';
+  const cat    = _adminLiveCat[id] || document.querySelector(`#alCat${id} .admin-popup-cat-opt.sel`)?.dataset.cat || p.cat;
+  if (!name) { showToast('Name cannot be empty'); return; }
+  try {
+    await sb.update('places', id, { name, emoji, address: addr, description: desc || null, category: cat });
+    p.name = name; p.emoji = emoji; p.address = addr; p.desc = desc; p.cat = cat;
+    map.closePopup();
+    refreshMarker(p);
+    renderRpLive();
+    showToast(`"${p.name}" updated ✓`);
+  } catch(e) { showToast('Could not save — check connection'); }
+}
+
+async function adminDeleteLive(id) {
+  map.closePopup();
+  await confirmDeletePlace(id);
+}
+
 // ── REVIEW PANEL ──
 let rpActiveTab = 'pending';
 async function openReviewPanel() {
@@ -2317,9 +2622,12 @@ async function openReviewPanel() {
   renderRpReports();
   renderRpFeedback();
   document.getElementById('reviewPanel').style.display = 'block';
+  // Enter admin mode
+  enterAdminMode();
 }
 function closeReviewPanel() {
   document.getElementById('reviewPanel').style.display = 'none';
+  exitAdminMode();
   history.replaceState(null, '', location.pathname);
 }
 function switchRpTab(tab) {
@@ -2336,19 +2644,130 @@ function renderRpPending() {
   if (!pendingPlaces.length) { el.innerHTML = '<div class="rp-empty">✅ No pending submissions</div>'; return; }
   el.innerHTML = pendingPlaces.map(p => {
     const d = new Date(p.submittedAt).toLocaleDateString('en-GB', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
-    return `<div class="rp-card">
+    const catOpts = ['food','nature','activities','events'].map(c =>
+      `<div class="rp-pending-edit-cat-opt${p.cat===c?' sel':''}" data-cat="${c}" data-pid="${p.id}" onclick="rp_setCat(this,${p.id})">${catEmojis[c]} ${c}</div>`
+    ).join('');
+    const hoursHtml = p.hours ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">🕐 Hours saved</div>` : '';
+    const dateHtml = p.limitedTime ? `<div style="font-size:11px;color:var(--acts);margin-top:4px">⏳ Limited-time${p.start||p.end?' · '+[p.start&&new Date(p.start).toLocaleDateString('en-GB'),p.end&&new Date(p.end).toLocaleDateString('en-GB')].filter(Boolean).join(' → '):''}</div>` : '';
+    return `<div class="rp-card" id="rpCard${p.id}">
       <div class="rp-card-top">
         <div class="rp-emoji">${esc(p.emoji)}</div>
-        <div><div class="rp-name">${esc(p.name)}</div><div class="rp-meta">${esc(p.cat)} · submitted ${d}</div></div>
+        <div style="flex:1;min-width:0">
+          <div class="rp-name">${esc(p.name)}</div>
+          <div class="rp-meta">${esc(p.cat)} · submitted ${d}</div>
+        </div>
+        <button onclick="locatePendingOnMap(${p.id})" style="background:var(--bg);border:1px solid var(--warm);border-radius:8px;padding:4px 9px;font-size:11px;cursor:pointer;flex-shrink:0;" title="Fly to on map">📍</button>
       </div>
       <div class="rp-addr">📍 ${esc(p.address)}</div>
       ${p.desc ? `<div class="rp-desc">${esc(p.desc)}</div>` : ''}
-      <div class="rp-row">
-        <button class="rp-approve" onclick="approvePlace(${p.id})">✅ Approve &amp; Publish</button>
+      ${hoursHtml}${dateHtml}
+      <div class="rp-row" style="margin-top:10px">
+        <button class="rp-approve" onclick="approvePlace(${p.id})">✅ Approve</button>
+        <button class="rp-approve" style="background:var(--acts)" onclick="togglePendingEdit(${p.id})">✏️ Edit</button>
         <button class="rp-reject"  onclick="rejectPlace(${p.id})">🗑 Reject</button>
+      </div>
+      <div class="rp-pending-edit-form" id="rpPendingEdit${p.id}">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;">Edit Submission</div>
+        <div class="rp-pending-edit-grid">
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:3px;">Name</div>
+            <input class="rp-edit-input" id="rpeName${p.id}" value="${esc(p.name)}" placeholder="Name" style="width:100%">
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:3px;">Emoji Icon</div>
+            <div class="rp-pending-emoji-row"><input class="rp-pending-emoji-input" id="rpeEmoji${p.id}" value="${esc(p.emoji)}" maxlength="4"></div>
+          </div>
+        </div>
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:5px;">Category</div>
+        <div class="rp-pending-edit-cat" id="rpeCat${p.id}">${catOpts}</div>
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:3px;">Address</div>
+        <input class="rp-edit-input" id="rpeAddr${p.id}" value="${esc(p.address)}" placeholder="Address" style="width:100%;margin-bottom:8px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:3px;">Description</div>
+        <textarea class="rp-edit-textarea" id="rpeDesc${p.id}" placeholder="Description" style="width:100%;min-height:60px;margin-bottom:8px">${esc(p.desc||'')}</textarea>
+        ${p.limitedTime ? `
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:3px;">Active Dates</div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <input class="rp-edit-input" type="date" id="rpeStart${p.id}" value="${p.start ? new Date(p.start).toISOString().slice(0,10) : ''}" style="flex:1">
+          <input class="rp-edit-input" type="date" id="rpeEnd${p.id}"   value="${p.end   ? new Date(p.end  ).toISOString().slice(0,10) : ''}" style="flex:1">
+        </div>` : ''}
+        <div class="rp-pending-edit-actions">
+          <button class="rp-pending-save" onclick="savePendingEdit(${p.id})">💾 Save &amp; Approve</button>
+          <button class="rp-pending-save" style="background:var(--ink)" onclick="savePendingEditOnly(${p.id})">💾 Save Only</button>
+          <button class="rp-pending-cancel-edit" onclick="togglePendingEdit(${p.id})">Cancel</button>
+        </div>
       </div>
     </div>`;
   }).join('');
+}
+
+// track per-pending-card the currently selected category
+const _rpPendingCat = {};
+function rp_setCat(el, pid) {
+  el.closest('.rp-pending-edit-cat').querySelectorAll('.rp-pending-edit-cat-opt').forEach(o => o.classList.remove('sel'));
+  el.classList.add('sel');
+  _rpPendingCat[pid] = el.dataset.cat;
+  // update emoji to match category default if still using old cat emoji
+  const emojiInput = document.getElementById(`rpeEmoji${pid}`);
+  if (emojiInput && catEmojis[el.dataset.cat]) emojiInput.value = catEmojis[el.dataset.cat];
+}
+
+function togglePendingEdit(id) {
+  const form = document.getElementById(`rpPendingEdit${id}`);
+  form.classList.toggle('open');
+}
+
+async function savePendingEditOnly(id) {
+  const p = pendingPlaces.find(x => x.id === id); if (!p) return;
+  const updates = _collectPendingEdits(id, p);
+  if (!updates) return;
+  try {
+    await sb.update('places', id, { name: updates.name, category: updates.cat, emoji: updates.emoji, address: updates.address, description: updates.desc || null, ...(p.limitedTime ? {start_ts: updates.start || null, end_ts: updates.end || null} : {}) });
+    Object.assign(p, updates);
+    // Update the pending admin marker label if visible
+    if (adminPendingMarkers[id]) {
+      map.removeLayer(adminPendingMarkers[id]);
+      delete adminPendingMarkers[id];
+      addAdminPendingMarker(p);
+    }
+    renderRpPending();
+    showToast(`"${p.name}" updated ✓`);
+  } catch(e) { showToast('Could not save — check your connection'); }
+}
+
+async function savePendingEdit(id) {
+  const p = pendingPlaces.find(x => x.id === id); if (!p) return;
+  const updates = _collectPendingEdits(id, p);
+  if (!updates) return;
+  try {
+    await sb.update('places', id, { name: updates.name, category: updates.cat, emoji: updates.emoji, address: updates.address, description: updates.desc || null, ...(p.limitedTime ? {start_ts: updates.start || null, end_ts: updates.end || null} : {}), status: 'live' });
+    Object.assign(p, updates);
+    // remove from pending, add to live
+    const idx = pendingPlaces.findIndex(x => x.id === id);
+    pendingPlaces.splice(idx, 1);
+    if (adminPendingMarkers[id]) { map.removeLayer(adminPendingMarkers[id]); delete adminPendingMarkers[id]; }
+    places.push(p); addMarker(p);
+    queueApprovedNotification(p.name);
+    syncApprovedSubmissions(); renderActivityPanel(); applySort();
+    renderRpPending(); renderRpLive();
+    showToast(`"${p.name}" saved &amp; approved 🎉`);
+  } catch(e) { showToast('Could not save — check your connection'); }
+}
+
+function _collectPendingEdits(id, p) {
+  const name = document.getElementById(`rpeName${id}`)?.value.trim();
+  if (!name) { showToast('Name cannot be empty'); return null; }
+  const emoji   = document.getElementById(`rpeEmoji${id}`)?.value.trim() || p.emoji;
+  const address = document.getElementById(`rpeAddr${id}`)?.value.trim() || p.address;
+  const desc    = document.getElementById(`rpeDesc${id}`)?.value.trim();
+  const cat     = _rpPendingCat[id] || document.querySelector(`#rpeCat${id} .rp-pending-edit-cat-opt.sel`)?.dataset.cat || p.cat;
+  let start = p.start, end = p.end;
+  if (p.limitedTime) {
+    const sv = document.getElementById(`rpeStart${id}`)?.value;
+    const ev = document.getElementById(`rpeEnd${id}`)?.value;
+    start = sv ? new Date(sv).getTime() : null;
+    end   = ev ? new Date(ev).getTime() : null;
+  }
+  return { name, emoji, address, desc, cat, start, end };
 }
 
 function renderRpLive() {
@@ -2358,6 +2777,9 @@ function renderRpLive() {
   el.innerHTML = [...places].reverse().map(p => {
     const reportCount = reportItems.filter(r => r.placeId === p.id).length;
     const reportBadge = reportCount ? `<span style="background:#fff0ee;color:var(--accent);border-radius:50px;font-size:10px;font-weight:800;padding:1px 7px;margin-left:6px">⚑ ${reportCount}</span>` : '';
+    const catOpts = ['food','nature','activities','events'].map(c =>
+      `<div class="rp-pending-edit-cat-opt${p.cat===c?' sel':''}" data-cat="${c}" onclick="rp_setLiveCat(this,${p.id})">${catEmojis[c]} ${c}</div>`
+    ).join('');
     return `<div class="rp-card" id="liveCard${p.id}">
       <div class="rp-card-top">
         <div class="rp-emoji">${esc(p.emoji)}</div>
@@ -2379,16 +2801,34 @@ function renderRpLive() {
         </div>
       </div>
       <div class="rp-edit-form" id="editForm${p.id}">
-        <input  class="rp-edit-input"    id="eName${p.id}"  value="${esc(p.name)}"    placeholder="Name">
-        <input  class="rp-edit-input"    id="eAddr${p.id}"  value="${esc(p.address)}" placeholder="Address">
-        <textarea class="rp-edit-textarea" id="eDesc${p.id}"  placeholder="Description">${esc(p.desc||'')}</textarea>
-        <div class="rp-edit-actions">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;">Edit Place</div>
+        <div class="rp-pending-edit-grid">
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:3px;">Name</div>
+            <input class="rp-edit-input" id="eName${p.id}" value="${esc(p.name)}" placeholder="Name" style="width:100%">
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:3px;">Emoji Icon</div>
+            <input class="rp-pending-emoji-input" id="eEmoji${p.id}" value="${esc(p.emoji)}" maxlength="4">
+          </div>
+        </div>
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:5px;">Category</div>
+        <div class="rp-pending-edit-cat" id="eLiveCat${p.id}" style="margin-bottom:8px">${catOpts}</div>
+        <input class="rp-edit-input" id="eAddr${p.id}"  value="${esc(p.address)}" placeholder="Address" style="margin-bottom:8px;width:100%">
+        <textarea class="rp-edit-textarea" id="eDesc${p.id}"  placeholder="Description" style="width:100%;min-height:56px">${esc(p.desc||'')}</textarea>
+        <div class="rp-edit-actions" style="margin-top:8px">
           <button class="rp-save"        onclick="saveEditPlace(${p.id})">💾 Save changes</button>
           <button class="rp-cancel-edit" onclick="toggleEditCard(${p.id})">Cancel</button>
         </div>
       </div>
     </div>`;
   }).join('');
+}
+const _rpLiveCat = {};
+function rp_setLiveCat(el, pid) {
+  el.closest('.rp-pending-edit-cat').querySelectorAll('.rp-pending-edit-cat-opt').forEach(o => o.classList.remove('sel'));
+  el.classList.add('sel');
+  _rpLiveCat[pid] = el.dataset.cat;
 }
 
 function renderRpReports() {
@@ -2432,13 +2872,15 @@ function toggleEditCard(id) {
 }
 async function saveEditPlace(id) {
   const p = places.find(x => x.id === id); if (!p) return;
-  const newName = document.getElementById(`eName${id}`).value.trim();
-  const newAddr = document.getElementById(`eAddr${id}`).value.trim();
-  const newDesc = document.getElementById(`eDesc${id}`).value.trim();
+  const newName  = document.getElementById(`eName${id}`).value.trim();
+  const newAddr  = document.getElementById(`eAddr${id}`).value.trim();
+  const newDesc  = document.getElementById(`eDesc${id}`).value.trim();
+  const newEmoji = document.getElementById(`eEmoji${id}`)?.value.trim() || p.emoji;
+  const newCat   = _rpLiveCat[id] || document.querySelector(`#eLiveCat${id} .rp-pending-edit-cat-opt.sel`)?.dataset.cat || p.cat;
   if (!newName) { showToast('Name cannot be empty'); return; }
   try {
-    await sb.update('places', id, { name: newName, address: newAddr || p.address, description: newDesc });
-    p.name = newName; p.address = newAddr || p.address; p.desc = newDesc;
+    await sb.update('places', id, { name: newName, address: newAddr || p.address, description: newDesc, emoji: newEmoji, category: newCat });
+    p.name = newName; p.address = newAddr || p.address; p.desc = newDesc; p.emoji = newEmoji; p.cat = newCat;
     refreshMarker(p); renderRpLive();
     showToast(`"${p.name}" updated ✓`);
   } catch(e) { showToast('Could not save — check your connection'); }
