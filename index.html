@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Spothan — Discover Places Near You</title>
 <meta name="description" content="Find and share the best local spots around you — food, nature, activities and events, all on one map.">
 <meta name="theme-color" content="#0d0d0d">
@@ -43,6 +43,10 @@
 }
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--ink);height:100dvh;overflow:hidden;position:relative;}
+/* Prevent accidental pinch-zoom on UI panels — map remains fully zoomable */
+.top-panel,.about-modal,.sheet,.fb-modal,.email-modal,.sort-menu,.search-suggestions,
+.forecast-strip,.count-pill,.fab,.toast,.rp-wrap,.approved-banner,#onboardOverlay>div,
+#iosBanner,#installBanner,#locConfirm,#dataPanel,#reviewPanel{touch-action:pan-x pan-y;}
 /* iOS PWA safe area fixes */
 #map{position:absolute;top:0;left:0;right:0;bottom:0;}
 .top-panel{padding-top:max(14px, env(safe-area-inset-top, 14px));}
@@ -733,8 +737,8 @@ const sb = {
     return this._req(`${table}?${params}`);
   },
   // INSERT
-  async insert(table, data) {
-    return this._req(table, { method: 'POST', body: JSON.stringify(data) });
+  async insert(table, data, prefer) {
+    return this._req(table, { method: 'POST', body: JSON.stringify(data), prefer: prefer || 'return=representation' });
   },
   // UPDATE (by id)
   async update(table, id, data) {
@@ -1156,6 +1160,9 @@ renderActivityPanel = function() {
   if (!host) return;
   const voteCount = Object.keys(voteLocks).filter(k => /^\d+$/.test(k)).length;
   const submissionCount = approvedSubmissions.length;
+  // Count total upvotes received on this device's approved submissions
+  const myPlaces = places.filter(p => p.deviceId === DEVICE_ID);
+  const totalLikes = myPlaces.reduce((sum, p) => sum + rawCounts(p).up, 0);
 
   host.innerHTML = `
     <div class="stats-grid">
@@ -1169,8 +1176,15 @@ renderActivityPanel = function() {
         <div class="stat-icon">✅</div>
         <div class="stat-label">Approved spots</div>
         <div class="stat-value">${submissionCount}</div>
-        <div class="stat-note">Reviewed submissions from this device that made it onto the map.</div>
+        <div class="stat-note">Submissions from this device that made it onto the map.</div>
       </div>
+      ${submissionCount > 0 ? `
+      <div class="stat-card" style="grid-column:1/-1">
+        <div class="stat-icon">❤️</div>
+        <div class="stat-label">Likes received</div>
+        <div class="stat-value">${totalLikes}</div>
+        <div class="stat-note">Total upvotes your approved places have received from the community.</div>
+      </div>` : ''}
     </div>
     <div class="stats-footnote">Your progress is saved on this device and can later be connected to rewards, streaks, or contributor levels.</div>
   `;
@@ -1261,7 +1275,23 @@ async function bootMap(center, zoom) {
   });
   map.addLayer(clusterGroup);
   let moveTimer = null;
-  map.on('moveend zoomend', () => { clearTimeout(moveTimer); moveTimer = setTimeout(applySort, 150); });
+  let lastSortCenter = null;
+  map.on('moveend zoomend', () => {
+    clearTimeout(moveTimer);
+    moveTimer = setTimeout(() => {
+      const c = map.getCenter();
+      const z = map.getZoom();
+      // Compute viewport half-width in km — threshold = 40% of that
+      // So reloading only triggers when you've panned far enough to reveal new content
+      const bounds = map.getBounds();
+      const viewportKm = haversine(c.lat, bounds.getWest(), c.lat, bounds.getEast());
+      const threshold = viewportKm * 0.4;
+      const moved = !lastSortCenter
+        || lastSortCenter.z !== z
+        || haversine(lastSortCenter.lat, lastSortCenter.lng, c.lat, c.lng) > threshold;
+      if (moved) { lastSortCenter = {lat:c.lat, lng:c.lng, z}; applySort(); }
+    }, 400);
+  });
   applySort();
   loadPendingMarkers();
   loadWeather(center);
@@ -2547,25 +2577,42 @@ function openAboutPanel() {
   const section = document.getElementById('aboutInstallSection');
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const dismissed = localStorage.getItem('spothan_install_dismissed_v1');
 
-  if (!isStandalone) {
-    if (deferredInstallPrompt && !dismissed && !isIOS) {
-      section.innerHTML = `<div style="background:#fff8f6;border:1.5px solid var(--accent);border-radius:12px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px;">📲 Install Spothan</div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Add to your home screen for the best experience — works offline too.</div>
-        <button onclick="installFromAbout()" style="width:100%;padding:10px;background:var(--accent);color:white;border:none;border-radius:10px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">Install app</button>
-      </div>`;
-    } else if (isIOS) {
-      section.innerHTML = `<div style="background:#fff8f6;border:1.5px solid var(--accent);border-radius:12px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px;">📲 Install on iPhone</div>
-        <div style="font-size:12px;color:var(--ink2);line-height:1.6;">1. Tap the <strong>Share button ⎙</strong> at the bottom of Safari<br>2. Tap <strong>"Add to Home Screen"</strong></div>
-      </div>`;
-    } else {
-      section.innerHTML = '';
-    }
-  } else {
+  if (isStandalone) {
     section.innerHTML = `<div style="background:#e6faf2;border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--nature);font-weight:600;">✅ App installed on your device</div>`;
+  } else if (deferredInstallPrompt && !isIOS) {
+    // Android / laptop — can trigger native install prompt
+    section.innerHTML = `<div style="background:#fff8f6;border:1.5px solid var(--accent);border-radius:12px;padding:14px;margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px;">📲 Install Spothan</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Add to your home screen for the best experience — works offline too.</div>
+      <button onclick="installFromAbout()" style="width:100%;padding:10px;background:var(--accent);color:white;border:none;border-radius:10px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">Install app</button>
+    </div>`;
+  } else if (isIOS) {
+    section.innerHTML = `<div style="background:#fff8f6;border:1.5px solid var(--accent);border-radius:12px;padding:14px;margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px;">📲 Install on iPhone</div>
+      <div style="font-size:12px;color:var(--ink2);line-height:1.6;">1. Tap the <strong>Share button ⎙</strong> at the bottom of Safari<br>2. Tap <strong>"Add to Home Screen"</strong></div>
+    </div>`;
+  } else {
+    // Desktop Chrome/Firefox where prompt was dismissed or already installed
+    section.innerHTML = `<div style="background:#f5f0ea;border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--muted);line-height:1.6;">
+      💡 To install, use your browser menu → <strong>Install app</strong> or <strong>Add to home screen</strong>
+    </div>`;
+  }
+
+  // Email preferences section — compact, not overwhelming
+  const emailSection = document.getElementById('aboutEmailSection');
+  if (emailSection) {
+    const storedEmail = localStorage.getItem(EMAIL_KEY);
+    const dontAsk = localStorage.getItem(EMAIL_DONTASK_KEY);
+    if (storedEmail) {
+      emailSection.innerHTML = `<div style="background:#f0faf6;border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--nature);font-weight:600;">💌 Subscribed as ${storedEmail} <button onclick="forgetEmail()" style="margin-left:8px;background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;text-decoration:underline;">change</button></div>`;
+    } else {
+      emailSection.innerHTML = `<div style="background:#f5f0ea;border-radius:12px;padding:12px 14px;margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--ink);margin-bottom:6px;">💌 Stay in the loop</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Get notified about new features and opportunities to shape Spothan.</div>
+        <button onclick="openEmailFromAbout()" style="width:100%;padding:9px;background:var(--ink);color:white;border:none;border-radius:9px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:12px;cursor:pointer;">${dontAsk ? 'Add email preferences' : 'Add email'}</button>
+      </div>`;
+    }
   }
 
   renderActivityPanel();
@@ -2574,6 +2621,18 @@ function openAboutPanel() {
 
 function closeAboutPanel() {
   document.getElementById('aboutOverlay').classList.remove('on');
+}
+
+function openEmailFromAbout() {
+  closeAboutPanel();
+  // Clear 'asked' flag so modal shows again, but keep dontask if previously set
+  localStorage.removeItem(EMAIL_ASKED_KEY);
+  localStorage.removeItem(EMAIL_DONTASK_KEY);
+  setTimeout(() => document.getElementById('emailOverlay').classList.add('on'), 300);
+}
+function forgetEmail() {
+  localStorage.removeItem(EMAIL_KEY);
+  openAboutPanel(); // re-render panel
 }
 
 async function installFromAbout() {
@@ -2631,7 +2690,7 @@ document.addEventListener('DOMContentLoaded', () => {
         email,
         device_id: DEVICE_ID,
         created_at: new Date().toISOString()
-      });
+      }, 'return=minimal');
       localStorage.setItem(EMAIL_KEY, email);
       closeEmailModal(false);
       showToast('Thanks! We\'ll keep you posted 🙌');
@@ -2781,7 +2840,9 @@ showOnboardingIfFirst();
     </div>
     <div class="about-section-label">This device</div>
     <div id="activityPanel"></div>
+    <div class="about-section-label">App &amp; Notifications</div>
     <div id="aboutInstallSection"></div>
+    <div id="aboutEmailSection"></div>
     <button onclick="closeAboutPanel()" style="width:100%;padding:13px;background:var(--ink);color:white;border:none;border-radius:12px;font-family:'Bricolage Grotesque',sans-serif;font-size:14px;font-weight:700;cursor:pointer;">Got it ✓</button>
   </div>
 </div>
