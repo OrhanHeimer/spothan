@@ -1346,7 +1346,7 @@ async function bootMap(center, zoom) {
       // Compute viewport half-width in km — threshold = 70% of that
       // So reloading only triggers when you've panned far enough to reveal new content
       // ── SENSITIVITY DIAL: increase this multiplier (0.0–1.0) to require more panning before reload ──
-      const RELOAD_THRESHOLD_FACTOR = 0.7; // was 0.4 — raise toward 1.0 for even less sensitivity
+      const RELOAD_THRESHOLD_FACTOR = 0.55; // was 0.4 — raise toward 1.0 for even less sensitivity
       const bounds = map.getBounds();
       const viewportKm = haversine(c.lat, bounds.getWest(), c.lat, bounds.getEast());
       const threshold = viewportKm * RELOAD_THRESHOLD_FACTOR;
