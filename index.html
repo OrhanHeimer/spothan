@@ -84,17 +84,17 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .search-wrap input::placeholder{color:var(--muted);}
 .search-clear{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1;}
 .search-clear:hover{color:var(--ink);}
-.search-suggestions{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--surface);border-radius:14px;box-shadow:var(--sh-xl);overflow:hidden;display:none;flex-direction:column;z-index:600;max-height:260px;overflow-y:auto;}
+.search-suggestions{position:fixed;top:auto;left:0;right:0;background:var(--surface);border-radius:14px;box-shadow:var(--sh-xl);overflow:hidden;display:none;flex-direction:column;z-index:600;max-height:60dvh;overflow-y:auto;margin:0 8px;}
 .search-suggestions.open{display:flex;}
-.search-sug-item{display:flex;align-items:center;gap:11px;padding:11px 14px;cursor:pointer;border-bottom:1px solid var(--warm);transition:background .1s;flex-shrink:0;}
+.search-sug-item{display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;border-bottom:1px solid var(--warm);transition:background .1s;flex-shrink:0;}
 .search-sug-item:last-child{border-bottom:none;}
 .search-sug-item:hover{background:var(--bg);}
-.search-sug-emoji{font-size:20px;flex-shrink:0;width:28px;text-align:center;}
+.search-sug-emoji{font-size:22px;flex-shrink:0;width:30px;text-align:center;}
 .search-sug-info{flex:1;min-width:0;}
-.search-sug-name{font-size:13px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.search-sug-name{font-size:15px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .search-sug-name em{font-style:normal;color:var(--accent);}
-.search-sug-meta{font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.search-sug-cat{flex-shrink:0;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:2px 7px;border-radius:50px;}
+.search-sug-meta{font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.search-sug-cat{flex-shrink:0;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:3px 9px;border-radius:50px;}
 .icon-btn{width:44px;height:44px;border-radius:50%;background:var(--surface);border:none;box-shadow:var(--sh);cursor:pointer;font-size:17px;display:flex;align-items:center;justify-content:center;transition:transform .15s;flex-shrink:0;}
 .icon-btn:hover{transform:scale(1.07);}
 .info-row{display:flex;gap:8px;pointer-events:all;align-items:center;}
@@ -1343,11 +1343,13 @@ async function bootMap(center, zoom) {
     moveTimer = setTimeout(() => {
       const c = map.getCenter();
       const z = map.getZoom();
-      // Compute viewport half-width in km — threshold = 40% of that
+      // Compute viewport half-width in km — threshold = 70% of that
       // So reloading only triggers when you've panned far enough to reveal new content
+      // ── SENSITIVITY DIAL: increase this multiplier (0.0–1.0) to require more panning before reload ──
+      const RELOAD_THRESHOLD_FACTOR = 0.7; // was 0.4 — raise toward 1.0 for even less sensitivity
       const bounds = map.getBounds();
       const viewportKm = haversine(c.lat, bounds.getWest(), c.lat, bounds.getEast());
-      const threshold = viewportKm * 0.4;
+      const threshold = viewportKm * RELOAD_THRESHOLD_FACTOR;
       const moved = !lastSortCenter
         || lastSortCenter.z !== z
         || haversine(lastSortCenter.lat, lastSortCenter.lng, c.lat, c.lng) > threshold;
@@ -1778,6 +1780,11 @@ function bindUI() {
     return esc(text.slice(0, idx)) + '<em>' + esc(text.slice(idx, idx + q.length)) + '</em>' + esc(text.slice(idx + q.length));
   }
 
+  function positionSearchSuggestions() {
+    const r = document.getElementById('searchWrap').getBoundingClientRect();
+    searchSugs.style.top = (r.bottom + 6) + 'px';
+  }
+
   function renderSearchSuggestions(q) {
     if (!q || q.length < 1) { searchSugs.classList.remove('open'); searchSugs.innerHTML=''; return; }
     const lq = q.toLowerCase();
@@ -1802,6 +1809,7 @@ function bindUI() {
         <div class="search-sug-cat" style="background:${catColor}18;color:${catColor}">${esc(p.cat)}</div>
       </div>`;
     }).join('');
+    positionSearchSuggestions();
     searchSugs.classList.add('open');
 
     searchSugs.querySelectorAll('.search-sug-item').forEach(el => {
@@ -1843,7 +1851,7 @@ function bindUI() {
   });
 
   searchInput.addEventListener('focus', e => {
-    if (e.target.value) renderSearchSuggestions(e.target.value);
+    if (e.target.value) { positionSearchSuggestions(); renderSearchSuggestions(e.target.value); }
   });
 
   searchInput.addEventListener('keydown', e => {
@@ -1880,6 +1888,8 @@ function closeModal(){
   document.getElementById('dupWarn').classList.remove('show');
   document.getElementById('locConfirm').style.display = 'none';
   if (previewMarker) { map.removeLayer(previewMarker); previewMarker = null; }
+  // Remove any dangling map-click listener from the location refinement flow
+  map.off('click');
   document.getElementById('addrSuggestions').classList.remove('open');
   document.getElementById('addrSuggestions').innerHTML='';
   pendingCoords=null; setLimitedTime(false); resetHours();
@@ -2049,31 +2059,92 @@ async function geocodeSearch(q, box, input, confirm){
       }).addTo(map);
       map.setView([r.lat, r.lng], 16, {animate:true});
 
-      // Show confirm card
-      document.getElementById('locConfirmAddr').textContent = r.storedAddr;
-      document.getElementById('locConfirm').style.display = 'block';
+      // Working coords — can be overridden by map tap
+      let workingLat = r.lat, workingLng = r.lng;
 
-      // YES — confirm location, reopen modal with address filled in
-      document.getElementById('locConfirmYes').onclick = () => {
-        input.value = r.storedAddr;
-        pendingCoords = {lat:r.lat, lng:r.lng};
-        confirm.classList.remove('show');
-        document.getElementById('locConfirm').style.display = 'none';
-        document.getElementById('overlay').classList.add('on');
-        // Leave preview marker briefly then fade it
-        setTimeout(()=>{ if(previewMarker){map.removeLayer(previewMarker);previewMarker=null;} }, 3000);
-      };
+      // Show the initial address confirm card
+      showLocConfirmInitial(r.storedAddr);
 
-      // NO — remove marker, reopen modal so they can search again
-      document.getElementById('locConfirmNo').onclick = () => {
-        if (previewMarker) { map.removeLayer(previewMarker); previewMarker=null; }
-        pendingCoords = null;
-        input.value = '';
-        confirm.classList.remove('show');
-        document.getElementById('locConfirm').style.display = 'none';
-        document.getElementById('overlay').classList.add('on');
-        setTimeout(()=>input.focus(), 300);
-      };
+      // ── MAP CLICK HANDLER — lets user drag pin to exact spot ──
+      let mapClickEnabled = true;
+
+      function onMapClick(ev) {
+        if (!mapClickEnabled) return;
+        workingLat = ev.latlng.lat;
+        workingLng = ev.latlng.lng;
+
+        // Move the preview dot
+        if (previewMarker) previewMarker.setLatLng([workingLat, workingLng]);
+        else previewMarker = L.circleMarker([workingLat, workingLng], {
+          radius:14, color:'#ff3c00', fillColor:'#ff3c00', fillOpacity:.25, weight:3
+        }).addTo(map);
+
+        // Show "use this exact spot?" card
+        showLocConfirmExact(workingLat, workingLng);
+      }
+      map.on('click', onMapClick);
+
+      function cleanupMapClick() {
+        mapClickEnabled = false;
+        map.off('click', onMapClick);
+      }
+
+      // Show initial card: "Is this right?" + hint to tap map
+      function showLocConfirmInitial(addrText) {
+        const card = document.getElementById('locConfirm');
+        card.innerHTML = `
+          <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:4px;">📍 Is this the right location?</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5;">${esc(addrText)}</div>
+          <div style="font-size:11px;color:var(--acts);font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:5px;">
+            <span>🗺</span> Tap anywhere on the map to move the pin to the exact spot
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button id="locConfirmYes" style="flex:1;padding:11px;background:var(--ink);color:white;border:none;border-radius:11px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">✅ Yes, use this</button>
+            <button id="locConfirmNo"  style="flex:1;padding:11px;background:var(--warm);color:var(--ink2);border:none;border-radius:11px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">🔍 Search again</button>
+          </div>`;
+        card.style.display = 'block';
+        bindConfirmButtons();
+      }
+
+      // Show "use this exact spot?" card after a map tap
+      function showLocConfirmExact(lat, lng) {
+        const card = document.getElementById('locConfirm');
+        const coordStr = lat.toFixed(5) + ', ' + lng.toFixed(5);
+        card.innerHTML = `
+          <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:4px;">📌 Use this exact spot?</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px;line-height:1.5;font-family:monospace;">${coordStr}</div>
+          <div style="font-size:11px;color:var(--acts);font-weight:600;margin-bottom:12px;">Tap again on the map to refine further</div>
+          <div style="display:flex;gap:10px;">
+            <button id="locConfirmYes" style="flex:1;padding:11px;background:var(--accent);color:white;border:none;border-radius:11px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">📌 Yes, pin it here</button>
+            <button id="locConfirmNo"  style="flex:1;padding:11px;background:var(--warm);color:var(--ink2);border:none;border-radius:11px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">🔍 Search again</button>
+          </div>`;
+        card.style.display = 'block';
+        bindConfirmButtons();
+      }
+
+      function bindConfirmButtons() {
+        // YES — lock in workingLat/Lng as the confirmed coordinates
+        document.getElementById('locConfirmYes').onclick = () => {
+          cleanupMapClick();
+          input.value = r.storedAddr;
+          pendingCoords = {lat: workingLat, lng: workingLng};
+          document.getElementById('locConfirm').style.display = 'none';
+          document.getElementById('overlay').classList.add('on');
+          // Briefly keep dot visible then remove it
+          setTimeout(()=>{ if(previewMarker){map.removeLayer(previewMarker);previewMarker=null;} }, 2500);
+        };
+
+        // NO — cancel everything, reopen modal to search again
+        document.getElementById('locConfirmNo').onclick = () => {
+          cleanupMapClick();
+          if (previewMarker) { map.removeLayer(previewMarker); previewMarker=null; }
+          pendingCoords = null;
+          input.value = '';
+          document.getElementById('locConfirm').style.display = 'none';
+          document.getElementById('overlay').classList.add('on');
+          setTimeout(()=>input.focus(), 300);
+        };
+      }
     });
     box.appendChild(el);
   });
@@ -3192,12 +3263,7 @@ showOnboardingIfFirst();
 
 <!-- ── LOCATION CONFIRM CARD ── -->
 <div id="locConfirm" style="display:none;position:fixed;bottom:32px;left:50%;transform:translateX(-50%);z-index:9000;background:var(--surface);border-radius:20px;padding:16px 20px;box-shadow:0 8px 32px rgba(0,0,0,.22);min-width:280px;max-width:340px;width:calc(100% - 40px);">
-  <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:4px;">📍 Is this the right location?</div>
-  <div id="locConfirmAddr" style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5;"></div>
-  <div style="display:flex;gap:10px;">
-    <button id="locConfirmYes" style="flex:1;padding:11px;background:var(--ink);color:white;border:none;border-radius:11px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">✅ Yes, use this</button>
-    <button id="locConfirmNo"  style="flex:1;padding:11px;background:var(--warm);color:var(--ink2);border:none;border-radius:11px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">🔍 Search again</button>
-  </div>
+  <!-- Content injected dynamically by showLocConfirmInitial / showLocConfirmExact -->
 </div>
 <div id="onboardOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(13,13,13,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);align-items:flex-end;justify-content:center;padding:0 0 env(safe-area-inset-bottom,0)">
   <div style="background:var(--surface);border-radius:28px 28px 0 0;padding:28px 24px 36px;max-width:480px;width:100%;box-shadow:0 -8px 40px rgba(0,0,0,.18)">
