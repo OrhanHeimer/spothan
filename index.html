@@ -164,6 +164,8 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .admin-popup-save{flex:1;padding:8px;background:var(--acts);color:white;border:none;border-radius:9px;font-weight:700;font-size:12px;cursor:pointer;}
 .admin-popup-delete{padding:8px 12px;background:#ffe8e4;color:var(--accent);border:none;border-radius:9px;font-weight:700;font-size:12px;cursor:pointer;}
 .admin-popup-section{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid var(--warm);}
+/* Admin hours rows in popups */
+.admin-hours-row{display:flex;align-items:center;gap:5px;}
 /* Pending edit form in review panel */
 .rp-pending-edit-form{display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--warm);}
 .rp-pending-edit-form.open{display:block;}
@@ -1367,8 +1369,39 @@ async function bootMap(center, zoom) {
   initHours();
   initEmojiPicker();
   initGeocoder();
+  // Wire admin geocoder whenever a popup opens
+  map.on('popupopen', () => {
+    // Live place popup address inputs
+    document.querySelectorAll('[id^="alAddr"]').forEach(input => {
+      if (input._adminGeoAttached) return;
+      input._adminGeoAttached = true;
+      const id = parseInt(input.id.replace('alAddr', ''));
+      initAdminGeocoder(input, ({lat, lng, address}) => {
+        const latEl = document.getElementById(`alLat${id}`);
+        const lngEl = document.getElementById(`alLng${id}`);
+        if (latEl) latEl.value = lat.toFixed(6);
+        if (lngEl) lngEl.value = lng.toFixed(6);
+        // Move the marker preview on the map
+        const m = markers[id];
+        if (m) m.setLatLng([lat, lng]);
+      });
+    });
+    // Pending popup address inputs
+    document.querySelectorAll('[id^="apAddr"]').forEach(input => {
+      if (input._adminGeoAttached) return;
+      input._adminGeoAttached = true;
+      const id = parseInt(input.id.replace('apAddr', ''));
+      initAdminGeocoder(input, ({lat, lng, address}) => {
+        const latEl = document.getElementById(`apLat${id}`);
+        const lngEl = document.getElementById(`apLng${id}`);
+        if (latEl) latEl.value = lat.toFixed(6);
+        if (lngEl) lngEl.value = lng.toFixed(6);
+        const m = adminPendingMarkers[id];
+        if (m) m.setLatLng([lat, lng]);
+      });
+    });
+  });
   if (supabaseReady) initRealtime();
-  checkApprovedNotifications();
 
   // Handle URL hashes AFTER map is ready
   const handleHash = () => {
@@ -1449,9 +1482,11 @@ function applySort() {
     : list;
   visible.forEach((p,i) => setTimeout(() => addMarker(p), i * 15));
   updateCount(list.length); // count shows total matching, not just visible
-  // Location-aware empty state
+  // Location-aware empty state — suppressed in admin mode
   const empty = document.getElementById('emptyState');
-  if (places.length === 0) {
+  if (adminMode) {
+    empty.style.display = 'none';
+  } else if (places.length === 0) {
     empty.style.display = 'block';
   } else if (visible.length === 0 && list.length > 0) {
     empty.querySelector('h2').textContent = 'Nothing here yet';
@@ -1509,7 +1544,7 @@ function openSheet(id) {
       </div>
     </div>
     <div class="actions">
-      <button class="act-btn ap" data-addr="${esc(p.address)}"><span class="ic">🧭</span>Directions</button>
+      <button class="act-btn ap" data-lat="${p.lat}" data-lng="${p.lng}" data-addr="${esc(p.address)}"><span class="ic">🧭</span>Directions</button>
       <button class="act-btn as save-btn" data-id="${p.id}" data-name="${esc(p.name)}" data-emoji="${esc(p.emoji)}"><span class="ic">♡</span>Save</button>
       <button class="act-btn as share-btn" data-name="${esc(p.name)}"><span class="ic">↗</span>Share</button>
     </div>
@@ -1520,7 +1555,7 @@ function openSheet(id) {
     <div style="height:8px"></div>`;
   document.getElementById('closeSheetBtn').onclick=closeSheet;
   document.querySelectorAll('.v-btn').forEach(b=>b.onclick=()=>castVote(parseInt(b.dataset.id),b.dataset.dir));
-  document.querySelectorAll('.act-btn.ap').forEach(b=>b.onclick=()=>getDir(b.dataset.addr));
+  document.querySelectorAll('.act-btn.ap').forEach(b=>b.onclick=()=>getDir(b.dataset.addr, parseFloat(b.dataset.lat), parseFloat(b.dataset.lng)));
   document.getElementById('reportPlaceBtn').onclick = () => openReportModal(parseInt(document.getElementById('reportPlaceBtn').dataset.id), document.getElementById('reportPlaceBtn').dataset.name);
   document.querySelectorAll('.save-btn').forEach(b=>{
     const bid=parseInt(b.dataset.id);
@@ -1649,8 +1684,10 @@ async function submitPlace() {
     submittedAt: now()
   };
   if (isLimitedTime) {
-    np.limitedTime = true;
     const s = document.getElementById('pStart').value, e = document.getElementById('pEnd').value;
+    if (!s || !e) { showToast('Please set start and end dates for limited-time places 📅'); return; }
+    if (new Date(e) <= new Date(s)) { showToast('End date must be after start date 📅'); return; }
+    np.limitedTime = true;
     if (s) np.start = new Date(s).getTime();
     if (e) np.end = new Date(e).getTime();
   }
@@ -2151,7 +2188,74 @@ async function geocodeSearch(q, box, input, confirm){
   box.classList.add('open');
 }
 
-// ── DATA PANEL ──
+// ── ADMIN GEOCODER — address search for admin popups ──
+// adminGeoTimers: keyed by input element id
+const adminGeoTimers = {};
+
+function initAdminGeocoder(inputEl, onSelect) {
+  // Create or reuse a suggestions box anchored below the input
+  let box = inputEl._adminGeoBox;
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'addr-suggestions';
+    box.style.position = 'fixed';
+    box.style.zIndex = '99999';
+    document.body.appendChild(box);
+    inputEl._adminGeoBox = box;
+  }
+
+  function posBox() {
+    const r = inputEl.getBoundingClientRect();
+    box.style.left  = r.left + 'px';
+    box.style.width = r.width + 'px';
+    box.style.top   = (r.bottom + 4) + 'px';
+    box.style.maxHeight = '180px';
+  }
+
+  inputEl.addEventListener('input', () => {
+    const q = inputEl.value.trim();
+    clearTimeout(inputEl._adminGeoTimer);
+    if (q.length < 2) { box.classList.remove('open'); box.innerHTML = ''; return; }
+    posBox();
+    inputEl._adminGeoTimer = setTimeout(async () => {
+      box.innerHTML = '<div class="addr-sug-item" style="color:var(--muted);font-style:italic;pointer-events:none">🔍 Searching…</div>';
+      box.classList.add('open');
+      try {
+        const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=51.2&lon=4.8&zoom=8&limit=6&bbox=2.5,49.5,7.2,53.6&lang=nl`;
+        const resp = await fetchWithTimeout(url, 7000);
+        const data = await resp.json();
+        const feats = (data.features||[]).filter(f=>f.geometry&&Array.isArray(f.geometry.coordinates)&&f.geometry.coordinates.length===2);
+        if (!feats.length) { box.innerHTML='<div class="addr-sug-item" style="color:var(--muted);pointer-events:none">No results</div>'; return; }
+        box.innerHTML = '';
+        feats.slice(0,6).forEach(res => {
+          const pr = res.properties;
+          const lngC = res.geometry.coordinates[0], latC = res.geometry.coordinates[1];
+          const street = pr.street ? (pr.housenumber ? pr.street+' '+pr.housenumber : pr.street) : '';
+          const city = pr.city||pr.town||pr.village||pr.county||'';
+          const name = pr.name||street||city||'?';
+          const sub = [name!==street&&street?street:'', city, pr.country].filter(s=>s&&s!==name).join(', ');
+          const storedAddr = [pr.name||street, city].filter(Boolean).join(', ')||name||'Unknown location';
+          const el = document.createElement('div');
+          el.className = 'addr-sug-item';
+          el.innerHTML = `<div class="addr-sug-name">${esc(name)}</div>${sub?`<div class="addr-sug-sub">${esc(sub)}</div>`:''}`;
+          el.addEventListener('mousedown', e => {
+            e.preventDefault();
+            inputEl.value = storedAddr;
+            box.classList.remove('open'); box.innerHTML = '';
+            onSelect({ lat: latC, lng: lngC, address: storedAddr });
+          });
+          box.appendChild(el);
+        });
+        box.classList.add('open');
+      } catch(e) {
+        box.innerHTML = '<div class="addr-sug-item" style="color:var(--accent);pointer-events:none">⚠ Search unavailable</div>';
+      }
+    }, 350);
+  });
+
+  inputEl.addEventListener('blur', () => setTimeout(() => box.classList.remove('open'), 200));
+  inputEl.addEventListener('focus', () => { if (box.children.length && inputEl.value.length > 1) posBox(); });
+}
 async function openDataPanel(){
   const pin = prompt('🔐 Data PIN:');
   if (pin !== DATA_PIN) { showToast('Wrong PIN'); history.replaceState(null,'',location.pathname); return; }
@@ -2328,9 +2432,12 @@ function renderHoursInSheet(hours) {
   }).join('');
   return `${badge}<div class="sh-hours"><div class="sh-hours-title">🕐 Opening Hours</div>${rows}</div>`;
 }
-function getDir(addr) {
-  const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}`;
-  // Use a real anchor click — works in PWA standalone mode on iOS and Android
+function getDir(addr, lat, lng) {
+  // Prefer exact coordinates if available — far more reliable than address strings
+  const dest = (lat && lng && !isNaN(lat) && !isNaN(lng))
+    ? `${lat},${lng}`
+    : encodeURIComponent(addr);
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${dest}`;
   const a = document.createElement('a');
   a.href = url;
   a.target = '_blank';
@@ -2527,8 +2634,22 @@ function buildAdminPendingPopup(p) {
   const catOpts = ['food','nature','activities','events'].map(c =>
     `<div class="admin-popup-cat-opt${p.cat===c?' sel':''}" onclick="adminPopupSetCat(this,'${c}',${p.id})" data-cat="${c}">${catEmojis[c]}</div>`
   ).join('');
-  return `<div class="admin-popup">
-    <div class="admin-popup-section">⏳ Pending Submission</div>
+  const startVal = p.start ? new Date(p.start).toISOString().slice(0,10) : '';
+  const endVal   = p.end   ? new Date(p.end).toISOString().slice(0,10)   : '';
+  const hoursHtml = DAY_NAMES.map((name, day) => {
+    const slot = (p.hours && p.hours[day]) || null;
+    const isClosed = !slot;
+    return `<div class="admin-hours-row" data-day="${day}" id="apHRow${p.id}_${day}">
+      <span style="font-size:11px;font-weight:700;color:var(--muted);width:30px;flex-shrink:0">${name}</span>
+      <input type="time" id="apHs${p.id}_${day}" value="${slot?slot.open:''}" style="flex:1;border:1px solid var(--warm);border-radius:6px;padding:3px 5px;font-size:11px;background:var(--bg);${isClosed?'opacity:.3':''}" ${isClosed?'disabled':''}>
+      <span style="font-size:10px;color:var(--muted)">–</span>
+      <input type="time" id="apHe${p.id}_${day}" value="${slot?slot.close:''}" style="flex:1;border:1px solid var(--warm);border-radius:6px;padding:3px 5px;font-size:11px;background:var(--bg);${isClosed?'opacity:.3':''}" ${isClosed?'disabled':''}>
+      <button onclick="apToggleHoursClosed(${p.id},${day})" style="font-size:10px;padding:2px 7px;border-radius:6px;border:1px solid var(--warm);background:${isClosed?'var(--ink)':'var(--bg)'};color:${isClosed?'white':'var(--muted)'};cursor:pointer;flex-shrink:0">${isClosed?'Closed':'Open'}</button>
+    </div>`;
+  }).join('');
+  const hoursEnabled = !!p.hours;
+  return `<div class="admin-popup" style="max-height:80vh;overflow-y:auto;">
+    <div class="admin-popup-section">⏳ Pending Submission — ${d}</div>
     <div class="admin-popup-field">
       <div class="admin-popup-label">Name</div>
       <input class="admin-popup-input" id="apName${p.id}" value="${esc(p.name)}">
@@ -2544,15 +2665,47 @@ function buildAdminPendingPopup(p) {
       </div>
     </div>
     <div class="admin-popup-field">
-      <div class="admin-popup-label">Address</div>
-      <input class="admin-popup-input" id="apAddr${p.id}" value="${esc(p.address)}">
+      <div class="admin-popup-label">Address <span style="font-size:9px;color:var(--acts)">(type to search)</span></div>
+      <input class="admin-popup-input" id="apAddr${p.id}" value="${esc(p.address)}" placeholder="Search address…" autocomplete="off">
+    </div>
+    <div style="display:flex;gap:6px">
+      <div class="admin-popup-field" style="flex:1">
+        <div class="admin-popup-label">Latitude</div>
+        <input class="admin-popup-input" id="apLat${p.id}" value="${p.lat}" type="number" step="0.00001">
+      </div>
+      <div class="admin-popup-field" style="flex:1">
+        <div class="admin-popup-label">Longitude</div>
+        <input class="admin-popup-input" id="apLng${p.id}" value="${p.lng}" type="number" step="0.00001">
+      </div>
     </div>
     <div class="admin-popup-field">
       <div class="admin-popup-label">Description</div>
       <textarea class="admin-popup-textarea" id="apDesc${p.id}">${esc(p.desc||'')}</textarea>
     </div>
-    <div class="admin-popup-meta">Submitted ${d} · ${esc(p.address)}</div>
-    <div class="admin-popup-actions">
+    <div class="admin-popup-field" style="display:flex;align-items:center;gap:8px;background:var(--bg);border-radius:8px;padding:7px 9px;cursor:pointer" onclick="apToggleLT(${p.id})">
+      <span style="font-size:14px">⏳</span>
+      <div style="flex:1;font-size:12px;font-weight:700;color:var(--ink)">Limited-time place</div>
+      <div id="apLTSwitch${p.id}" class="lt-switch${p.limitedTime?' on':''}" style="transform:scale(0.85)" role="switch" aria-checked="${p.limitedTime?'true':'false'}"><div class="lt-knob"></div></div>
+    </div>
+    <div id="apLTDates${p.id}" style="display:${p.limitedTime?'flex':'none'};gap:6px;margin-top:6px">
+      <div class="admin-popup-field" style="flex:1">
+        <div class="admin-popup-label">Start date</div>
+        <input class="admin-popup-input" id="apStart${p.id}" type="date" value="${startVal}">
+      </div>
+      <div class="admin-popup-field" style="flex:1">
+        <div class="admin-popup-label">End date <span style="color:var(--accent)">*</span></div>
+        <input class="admin-popup-input" id="apEnd${p.id}" type="date" value="${endVal}">
+      </div>
+    </div>
+    <div class="admin-popup-field" style="display:flex;align-items:center;gap:8px;background:var(--bg);border-radius:8px;padding:7px 9px;cursor:pointer;margin-top:4px" onclick="apToggleHours(${p.id})">
+      <span style="font-size:14px">🕐</span>
+      <div style="flex:1;font-size:12px;font-weight:700;color:var(--ink)">Opening hours</div>
+      <div id="apHoursSwitch${p.id}" class="lt-switch${hoursEnabled?' on':''}" style="transform:scale(0.85)" role="switch" aria-checked="${hoursEnabled?'true':'false'}"><div class="lt-knob"></div></div>
+    </div>
+    <div id="apHoursGrid${p.id}" style="display:${hoursEnabled?'flex':'none'};flex-direction:column;gap:4px;margin-top:6px;padding:8px;background:var(--bg);border-radius:8px">
+      ${hoursHtml}
+    </div>
+    <div class="admin-popup-actions" style="margin-top:10px">
       <button class="admin-popup-approve" onclick="adminApprovePending(${p.id})">✅ Approve</button>
       <button class="admin-popup-save" style="background:var(--acts)" onclick="adminSavePendingOnly(${p.id})">💾 Save</button>
       <button class="admin-popup-reject" onclick="adminRejectPending(${p.id})">🗑</button>
@@ -2560,30 +2713,98 @@ function buildAdminPendingPopup(p) {
   </div>`;
 }
 
+// Pending popup toggle helpers
 const _adminPopupCat = {};
+const _apLT = {}, _apHours = {};
+
 function adminPopupSetCat(el, cat, pid) {
   el.closest('.admin-popup-cat').querySelectorAll('.admin-popup-cat-opt').forEach(o => o.classList.remove('sel'));
   el.classList.add('sel');
   _adminPopupCat[pid] = cat;
 }
 
+function apToggleLT(pid) {
+  _apLT[pid] = !(_apLT[pid] ?? document.querySelector(`#apLTSwitch${pid}`)?.classList.contains('on'));
+  const sw = document.getElementById(`apLTSwitch${pid}`);
+  const dates = document.getElementById(`apLTDates${pid}`);
+  if (sw) { sw.classList.toggle('on', _apLT[pid]); sw.setAttribute('aria-checked', _apLT[pid]); }
+  if (dates) dates.style.display = _apLT[pid] ? 'flex' : 'none';
+}
+
+function apToggleHours(pid) {
+  _apHours[pid] = !(_apHours[pid] ?? document.querySelector(`#apHoursSwitch${pid}`)?.classList.contains('on'));
+  const sw = document.getElementById(`apHoursSwitch${pid}`);
+  const grid = document.getElementById(`apHoursGrid${pid}`);
+  if (sw) { sw.classList.toggle('on', _apHours[pid]); sw.setAttribute('aria-checked', _apHours[pid]); }
+  if (grid) grid.style.display = _apHours[pid] ? 'flex' : 'none';
+}
+
+function apToggleHoursClosed(pid, day) {
+  const row = document.getElementById(`apHRow${pid}_${day}`);
+  if (!row) return;
+  const inputs = row.querySelectorAll('input[type=time]');
+  const btn = row.querySelector('button');
+  const wasClosed = btn.textContent === 'Closed';
+  if (wasClosed) {
+    inputs.forEach(i => { i.disabled = false; i.style.opacity = '1'; });
+    btn.textContent = 'Open'; btn.style.background = 'var(--bg)'; btn.style.color = 'var(--muted)';
+  } else {
+    inputs.forEach(i => { i.disabled = true; i.style.opacity = '.3'; });
+    btn.textContent = 'Closed'; btn.style.background = 'var(--ink)'; btn.style.color = 'white';
+  }
+}
+
+function _readApHours(pid, p) {
+  const useHours = _apHours[pid] ?? !!p.hours;
+  if (!useHours) return null;
+  const hours = {};
+  for (let d = 0; d < 7; d++) {
+    const row = document.getElementById(`apHRow${pid}_${d}`);
+    if (!row) { hours[d] = p.hours?.[d] || null; continue; }
+    const btn = row.querySelector('button');
+    const isClosed = btn && btn.textContent === 'Closed';
+    if (isClosed) { hours[d] = null; continue; }
+    const open  = document.getElementById(`apHs${pid}_${d}`)?.value;
+    const close = document.getElementById(`apHe${pid}_${d}`)?.value;
+    hours[d] = (open && close) ? {open, close} : null;
+  }
+  return hours;
+}
+
 function _collectAdminPendingEdits(id, p) {
   const name  = document.getElementById(`apName${id}`)?.value.trim() || p.name;
-  const emoji  = document.getElementById(`apEmoji${id}`)?.value.trim() || p.emoji;
-  const addr   = document.getElementById(`apAddr${id}`)?.value.trim() || p.address;
-  const desc   = document.getElementById(`apDesc${id}`)?.value.trim() || '';
-  const cat    = _adminPopupCat[id] || document.querySelector(`#apCat${id} .admin-popup-cat-opt.sel`)?.dataset.cat || p.cat;
-  return { name, emoji, address: addr, desc, cat };
+  const emoji = document.getElementById(`apEmoji${id}`)?.value.trim() || p.emoji;
+  const addr  = document.getElementById(`apAddr${id}`)?.value.trim() || p.address;
+  const desc  = document.getElementById(`apDesc${id}`)?.value.trim() || '';
+  const cat   = _adminPopupCat[id] || document.querySelector(`#apCat${id} .admin-popup-cat-opt.sel`)?.dataset.cat || p.cat;
+  const lat   = parseFloat(document.getElementById(`apLat${id}`)?.value) || p.lat;
+  const lng   = parseFloat(document.getElementById(`apLng${id}`)?.value) || p.lng;
+  const useLT = _apLT[id] ?? p.limitedTime ?? false;
+  const sVal  = document.getElementById(`apStart${id}`)?.value;
+  const eVal  = document.getElementById(`apEnd${id}`)?.value;
+  const start = sVal ? new Date(sVal).getTime() : (p.start || null);
+  const end   = eVal ? new Date(eVal).getTime() : (p.end || null);
+  const hours = _readApHours(id, p);
+  return { name, emoji, address: addr, desc, cat, lat, lng, limitedTime: useLT, start, end, hours };
 }
 
 async function adminSavePendingOnly(id) {
   const p = pendingPlaces.find(x => x.id === id); if (!p) return;
   const u = _collectAdminPendingEdits(id, p);
+  if (u.limitedTime && !u.end) { showToast('End date required for limited-time places 📅'); return; }
   try {
-    await sb.update('places', id, { name: u.name, emoji: u.emoji, address: u.address, description: u.desc || null, category: u.cat });
-    Object.assign(p, u);
-    // Rebuild popup
-    if (adminPendingMarkers[id]) { adminPendingMarkers[id].setPopupContent(buildAdminPendingPopup(p)); }
+    await sb.update('places', id, {
+      name: u.name, emoji: u.emoji, address: u.address, description: u.desc || null,
+      category: u.cat, lat: u.lat, lng: u.lng,
+      limited_time: u.limitedTime, start_ts: u.start || null, end_ts: u.end || null,
+      hours: u.hours ? JSON.stringify(u.hours) : null
+    });
+    Object.assign(p, { name: u.name, emoji: u.emoji, address: u.address, desc: u.desc, cat: u.cat,
+      lat: u.lat, lng: u.lng, limitedTime: u.limitedTime, start: u.start, end: u.end, hours: u.hours });
+    if (adminPendingMarkers[id]) {
+      adminPendingMarkers[id].setLatLng([u.lat, u.lng]);
+      adminPendingMarkers[id].setPopupContent(buildAdminPendingPopup(p));
+    }
     renderRpPending();
     showToast(`"${p.name}" saved ✓`);
   } catch(e) { showToast('Could not save — check connection'); }
@@ -2592,9 +2813,16 @@ async function adminSavePendingOnly(id) {
 async function adminApprovePending(id) {
   const p = pendingPlaces.find(x => x.id === id); if (!p) return;
   const u = _collectAdminPendingEdits(id, p);
+  if (u.limitedTime && !u.end) { showToast('End date required for limited-time places 📅'); return; }
   try {
-    await sb.update('places', id, { name: u.name, emoji: u.emoji, address: u.address, description: u.desc || null, category: u.cat, status: 'live' });
-    Object.assign(p, u); p.cat = u.cat;
+    await sb.update('places', id, {
+      name: u.name, emoji: u.emoji, address: u.address, description: u.desc || null,
+      category: u.cat, lat: u.lat, lng: u.lng,
+      limited_time: u.limitedTime, start_ts: u.start || null, end_ts: u.end || null,
+      hours: u.hours ? JSON.stringify(u.hours) : null, status: 'live'
+    });
+    Object.assign(p, { name: u.name, emoji: u.emoji, address: u.address, desc: u.desc, cat: u.cat,
+      lat: u.lat, lng: u.lng, limitedTime: u.limitedTime, start: u.start, end: u.end, hours: u.hours });
     const idx = pendingPlaces.findIndex(x => x.id === id);
     pendingPlaces.splice(idx, 1);
     if (adminPendingMarkers[id]) { map.removeLayer(adminPendingMarkers[id]); delete adminPendingMarkers[id]; }
@@ -2618,7 +2846,28 @@ function buildAdminLivePopup(p) {
   const catOpts = ['food','nature','activities','events'].map(c =>
     `<div class="admin-popup-cat-opt${p.cat===c?' sel':''}" onclick="adminLiveSetCat(this,'${c}',${p.id})" data-cat="${c}">${catEmojis[c]}</div>`
   ).join('');
-  return `<div class="admin-popup">
+
+  // Format timestamps for date inputs
+  const startVal = p.start ? new Date(p.start).toISOString().slice(0,10) : '';
+  const endVal   = p.end   ? new Date(p.end).toISOString().slice(0,10)   : '';
+  const isLT = p.limitedTime ? 'checked' : '';
+
+  // Hours rows
+  const hoursHtml = DAY_NAMES.map((name, d) => {
+    const slot = (p.hours && p.hours[d]) || null;
+    const isClosed = !slot;
+    return `<div class="admin-hours-row" data-day="${d}" id="alHRow${p.id}_${d}">
+      <span style="font-size:11px;font-weight:700;color:var(--muted);width:30px;flex-shrink:0">${name}</span>
+      <input type="time" id="alHs${p.id}_${d}" value="${slot?slot.open:''}" style="flex:1;border:1px solid var(--warm);border-radius:6px;padding:3px 5px;font-size:11px;background:var(--bg);${isClosed?'opacity:.3':''}" ${isClosed?'disabled':''}>
+      <span style="font-size:10px;color:var(--muted)">–</span>
+      <input type="time" id="alHe${p.id}_${d}" value="${slot?slot.close:''}" style="flex:1;border:1px solid var(--warm);border-radius:6px;padding:3px 5px;font-size:11px;background:var(--bg);${isClosed?'opacity:.3':''}" ${isClosed?'disabled':''}>
+      <button onclick="adminToggleHoursClosed(${p.id},${d})" style="font-size:10px;padding:2px 7px;border-radius:6px;border:1px solid var(--warm);background:${isClosed?'var(--ink)':'var(--bg)'};color:${isClosed?'white':'var(--muted)'};cursor:pointer;flex-shrink:0">${isClosed?'Closed':'Open'}</button>
+    </div>`;
+  }).join('');
+
+  const hoursEnabled = !!p.hours;
+
+  return `<div class="admin-popup" style="max-height:80vh;overflow-y:auto;">
     <div class="admin-popup-section">✏️ Edit Live Place</div>
     <div class="admin-popup-field">
       <div class="admin-popup-label">Name</div>
@@ -2635,19 +2884,129 @@ function buildAdminLivePopup(p) {
       </div>
     </div>
     <div class="admin-popup-field">
-      <div class="admin-popup-label">Address</div>
-      <input class="admin-popup-input" id="alAddr${p.id}" value="${esc(p.address)}">
+      <div class="admin-popup-label">Address <span style="font-size:9px;color:var(--acts)">(type to search)</span></div>
+      <input class="admin-popup-input" id="alAddr${p.id}" value="${esc(p.address)}" placeholder="Search address…" autocomplete="off">
+    </div>
+    <div style="display:flex;gap:6px">
+      <div class="admin-popup-field" style="flex:1">
+        <div class="admin-popup-label">Latitude</div>
+        <input class="admin-popup-input" id="alLat${p.id}" value="${p.lat}" type="number" step="0.00001">
+      </div>
+      <div class="admin-popup-field" style="flex:1">
+        <div class="admin-popup-label">Longitude</div>
+        <input class="admin-popup-input" id="alLng${p.id}" value="${p.lng}" type="number" step="0.00001">
+      </div>
     </div>
     <div class="admin-popup-field">
       <div class="admin-popup-label">Description</div>
       <textarea class="admin-popup-textarea" id="alDesc${p.id}">${esc(p.desc||'')}</textarea>
     </div>
-    <div class="admin-popup-meta">👍 ${raw.up} · 👎 ${raw.dn} · Score: ${Math.round(ws.score)>=0?'+':''}${Math.round(ws.score)}</div>
+    <div class="admin-popup-field" style="display:flex;align-items:center;gap:8px;background:var(--bg);border-radius:8px;padding:7px 9px;cursor:pointer" onclick="adminToggleLT(${p.id})">
+      <span style="font-size:14px">⏳</span>
+      <div style="flex:1;font-size:12px;font-weight:700;color:var(--ink)">Limited-time place</div>
+      <div id="alLTSwitch${p.id}" class="lt-switch${p.limitedTime?' on':''}" style="transform:scale(0.85)" role="switch" aria-checked="${p.limitedTime?'true':'false'}"><div class="lt-knob"></div></div>
+    </div>
+    <div id="alLTDates${p.id}" style="display:${p.limitedTime?'flex':'none'};gap:6px;margin-top:6px">
+      <div class="admin-popup-field" style="flex:1">
+        <div class="admin-popup-label">Start date</div>
+        <input class="admin-popup-input" id="alStart${p.id}" type="date" value="${startVal}">
+      </div>
+      <div class="admin-popup-field" style="flex:1">
+        <div class="admin-popup-label">End date <span style="color:var(--accent)">*</span></div>
+        <input class="admin-popup-input" id="alEnd${p.id}" type="date" value="${endVal}">
+      </div>
+    </div>
+    <div class="admin-popup-field" style="display:flex;align-items:center;gap:8px;background:var(--bg);border-radius:8px;padding:7px 9px;cursor:pointer;margin-top:4px" onclick="adminToggleHours(${p.id})">
+      <span style="font-size:14px">🕐</span>
+      <div style="flex:1;font-size:12px;font-weight:700;color:var(--ink)">Opening hours</div>
+      <div id="alHoursSwitch${p.id}" class="lt-switch${hoursEnabled?' on':''}" style="transform:scale(0.85)" role="switch" aria-checked="${hoursEnabled?'true':'false'}"><div class="lt-knob"></div></div>
+    </div>
+    <div id="alHoursGrid${p.id}" style="display:${hoursEnabled?'flex':'none'};flex-direction:column;gap:4px;margin-top:6px;padding:8px;background:var(--bg);border-radius:8px">
+      ${hoursHtml}
+    </div>
+    <div class="admin-popup-meta" style="margin-top:8px">👍 ${raw.up} · 👎 ${raw.dn} · Score: ${Math.round(ws.score)>=0?'+':''}${Math.round(ws.score)}</div>
+    <div style="display:flex;gap:6px;margin-top:4px">
+      <div class="admin-popup-field" style="flex:1">
+        <div class="admin-popup-label">Upvotes (raw)</div>
+        <input class="admin-popup-input" id="alVotesUp${p.id}" type="number" value="${raw.up}" min="0">
+      </div>
+      <div class="admin-popup-field" style="flex:1">
+        <div class="admin-popup-label">Downvotes (raw)</div>
+        <input class="admin-popup-input" id="alVotesDn${p.id}" type="number" value="${raw.dn}" min="0">
+      </div>
+    </div>
     <div class="admin-popup-actions">
       <button class="admin-popup-save" onclick="adminSaveLive(${p.id})">💾 Save</button>
       <button class="admin-popup-delete" onclick="adminDeleteLive(${p.id})">🗑 Delete</button>
     </div>
   </div>`;
+}
+
+// Track limited-time and hours state in admin live popup
+const _adminLiveLT = {};
+const _adminLiveHours = {};
+
+function adminToggleLT(pid) {
+  _adminLiveLT[pid] = !(_adminLiveLT[pid] ?? document.querySelector(`#alLTSwitch${pid}`)?.classList.contains('on'));
+  const sw = document.getElementById(`alLTSwitch${pid}`);
+  const dates = document.getElementById(`alLTDates${pid}`);
+  if (sw) { sw.classList.toggle('on', _adminLiveLT[pid]); sw.setAttribute('aria-checked', _adminLiveLT[pid]); }
+  if (dates) dates.style.display = _adminLiveLT[pid] ? 'flex' : 'none';
+}
+
+function adminToggleHours(pid) {
+  _adminLiveHours[pid] = !(_adminLiveHours[pid] ?? document.querySelector(`#alHoursSwitch${pid}`)?.classList.contains('on'));
+  const sw = document.getElementById(`alHoursSwitch${pid}`);
+  const grid = document.getElementById(`alHoursGrid${pid}`);
+  if (sw) { sw.classList.toggle('on', _adminLiveHours[pid]); sw.setAttribute('aria-checked', _adminLiveHours[pid]); }
+  if (grid) grid.style.display = _adminLiveHours[pid] ? 'flex' : 'none';
+}
+
+function adminToggleHoursClosed(pid, day) {
+  const row = document.getElementById(`alHRow${pid}_${day}`);
+  if (!row) return;
+  const inputs = row.querySelectorAll('input[type=time]');
+  const btn = row.querySelector('button');
+  const wasClosed = btn.textContent === 'Closed';
+  if (wasClosed) {
+    inputs.forEach(i => { i.disabled = false; i.style.opacity = '1'; });
+    btn.textContent = 'Open'; btn.style.background = 'var(--bg)'; btn.style.color = 'var(--muted)';
+  } else {
+    inputs.forEach(i => { i.disabled = true; i.style.opacity = '.3'; });
+    btn.textContent = 'Closed'; btn.style.background = 'var(--ink)'; btn.style.color = 'white';
+  }
+}
+
+function _readAdminLiveHours(pid, p) {
+  const useHours = _adminLiveHours[pid] ?? !!p.hours;
+  if (!useHours) return null;
+  const hours = {};
+  for (let d = 0; d < 7; d++) {
+    const row = document.getElementById(`alHRow${pid}_${d}`);
+    if (!row) { hours[d] = p.hours?.[d] || null; continue; }
+    const btn = row.querySelector('button');
+    const isClosed = btn && btn.textContent === 'Closed';
+    if (isClosed) { hours[d] = null; continue; }
+    const open  = document.getElementById(`alHs${pid}_${d}`)?.value;
+    const close = document.getElementById(`alHe${pid}_${d}`)?.value;
+    hours[d] = (open && close) ? {open, close} : null;
+  }
+  return hours;
+}
+
+function _buildVoteArrayFromCounts(p, upTarget, dnTarget) {
+  // Reconstruct votes array to match requested raw counts
+  const existingUp = p.votes.filter(v => v.dir === 'up');
+  const existingDn = p.votes.filter(v => v.dir === 'dn');
+  const votes = [];
+  // Keep existing votes up to target, add synthetic ones if more needed
+  for (let i = 0; i < upTarget; i++) {
+    votes.push(existingUp[i] || {ts: Date.now() - i * 86400000, dir: 'up'});
+  }
+  for (let i = 0; i < dnTarget; i++) {
+    votes.push(existingDn[i] || {ts: Date.now() - i * 86400000, dir: 'dn'});
+  }
+  return votes;
 }
 
 const _adminLiveCat = {};
@@ -2664,10 +3023,50 @@ async function adminSaveLive(id) {
   const addr   = document.getElementById(`alAddr${id}`)?.value.trim() || p.address;
   const desc   = document.getElementById(`alDesc${id}`)?.value.trim() || '';
   const cat    = _adminLiveCat[id] || document.querySelector(`#alCat${id} .admin-popup-cat-opt.sel`)?.dataset.cat || p.cat;
+  const lat    = parseFloat(document.getElementById(`alLat${id}`)?.value) || p.lat;
+  const lng    = parseFloat(document.getElementById(`alLng${id}`)?.value) || p.lng;
   if (!name) { showToast('Name cannot be empty'); return; }
+  if (isNaN(lat) || isNaN(lng)) { showToast('Invalid coordinates'); return; }
+
+  // Limited time
+  const useLT = _adminLiveLT[id] ?? p.limitedTime ?? false;
+  let startTs = p.start || null, endTs = p.end || null;
+  if (useLT) {
+    const sVal = document.getElementById(`alStart${id}`)?.value;
+    const eVal = document.getElementById(`alEnd${id}`)?.value;
+    if (!eVal) { showToast('End date is required for limited-time places 📅'); return; }
+    startTs = sVal ? new Date(sVal).getTime() : null;
+    endTs   = eVal ? new Date(eVal).getTime() : null;
+    if (startTs && endTs && endTs <= startTs) { showToast('End date must be after start date 📅'); return; }
+  }
+
+  // Hours
+  const hours = _readAdminLiveHours(id, p);
+
+  // Votes
+  const upTarget = parseInt(document.getElementById(`alVotesUp${id}`)?.value) || 0;
+  const dnTarget = parseInt(document.getElementById(`alVotesDn${id}`)?.value) || 0;
+  const rawNow = rawCounts(p);
+  let newVotes = p.votes;
+  if (upTarget !== rawNow.up || dnTarget !== rawNow.dn) {
+    newVotes = _buildVoteArrayFromCounts(p, upTarget, dnTarget);
+  }
+
   try {
-    await sb.update('places', id, { name, emoji, address: addr, description: desc || null, category: cat });
+    const dbPayload = {
+      name, emoji, address: addr, description: desc || null, category: cat,
+      lat, lng,
+      limited_time: useLT || false,
+      start_ts: startTs, end_ts: endTs,
+      hours: hours ? JSON.stringify(hours) : null,
+      votes: newVotes
+    };
+    await sb.update('places', id, dbPayload);
     p.name = name; p.emoji = emoji; p.address = addr; p.desc = desc; p.cat = cat;
+    p.lat = lat; p.lng = lng;
+    p.limitedTime = useLT; p.start = startTs; p.end = endTs;
+    p.hours = hours;
+    p.votes = newVotes;
     map.closePopup();
     refreshMarker(p);
     renderRpLive();
@@ -2831,14 +3230,17 @@ function _collectPendingEdits(id, p) {
   const address = document.getElementById(`rpeAddr${id}`)?.value.trim() || p.address;
   const desc    = document.getElementById(`rpeDesc${id}`)?.value.trim();
   const cat     = _rpPendingCat[id] || document.querySelector(`#rpeCat${id} .rp-pending-edit-cat-opt.sel`)?.dataset.cat || p.cat;
+  const useLT   = p.limitedTime; // inherited from card (toggle not in RP pending edit form)
   let start = p.start, end = p.end;
-  if (p.limitedTime) {
+  if (useLT) {
     const sv = document.getElementById(`rpeStart${id}`)?.value;
     const ev = document.getElementById(`rpeEnd${id}`)?.value;
+    if (!ev) { showToast('End date required for limited-time places 📅'); return null; }
     start = sv ? new Date(sv).getTime() : null;
     end   = ev ? new Date(ev).getTime() : null;
+    if (start && end && end <= start) { showToast('End date must be after start date 📅'); return null; }
   }
-  return { name, emoji, address, desc, cat, start, end };
+  return { name, emoji, address, desc, cat, start, end, limitedTime: useLT };
 }
 
 function renderRpLive() {
@@ -2851,6 +3253,9 @@ function renderRpLive() {
     const catOpts = ['food','nature','activities','events'].map(c =>
       `<div class="rp-pending-edit-cat-opt${p.cat===c?' sel':''}" data-cat="${c}" onclick="rp_setLiveCat(this,${p.id})">${catEmojis[c]} ${c}</div>`
     ).join('');
+    const startVal = p.start ? new Date(p.start).toISOString().slice(0,10) : '';
+    const endVal   = p.end   ? new Date(p.end).toISOString().slice(0,10)   : '';
+    const lbl = s => `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:3px">${s}</div>`;
     return `<div class="rp-card" id="liveCard${p.id}">
       <div class="rp-card-top">
         <div class="rp-emoji">${esc(p.emoji)}</div>
@@ -2860,6 +3265,8 @@ function renderRpLive() {
         </div>
       </div>
       ${p.desc ? `<div class="rp-desc" style="margin-bottom:8px">${esc(p.desc)}</div>` : ''}
+      ${p.limitedTime ? `<div style="font-size:11px;color:var(--acts);margin-bottom:6px">⏳ Limited-time${p.end?' · ends '+new Date(p.end).toLocaleDateString('en-GB'):''}</div>` : ''}
+      ${p.hours ? `<div style="font-size:11px;color:var(--muted);margin-bottom:6px">🕐 Has opening hours</div>` : ''}
       <div class="rp-row">
         <button class="rp-approve" style="background:var(--acts)" onclick="toggleEditCard(${p.id})">✏️ Edit</button>
         <button class="rp-reject"  onclick="startDeletePlace(${p.id})">🗑 Delete</button>
@@ -2872,23 +3279,29 @@ function renderRpLive() {
         </div>
       </div>
       <div class="rp-edit-form" id="editForm${p.id}">
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;">Edit Place</div>
+        ${lbl('Edit Place')}
         <div class="rp-pending-edit-grid">
-          <div>
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:3px;">Name</div>
-            <input class="rp-edit-input" id="eName${p.id}" value="${esc(p.name)}" placeholder="Name" style="width:100%">
-          </div>
-          <div>
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:3px;">Emoji Icon</div>
-            <input class="rp-pending-emoji-input" id="eEmoji${p.id}" value="${esc(p.emoji)}" maxlength="4">
-          </div>
+          <div>${lbl('Name')}<input class="rp-edit-input" id="eName${p.id}" value="${esc(p.name)}" placeholder="Name" style="width:100%"></div>
+          <div>${lbl('Emoji Icon')}<input class="rp-pending-emoji-input" id="eEmoji${p.id}" value="${esc(p.emoji)}" maxlength="4"></div>
         </div>
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:5px;">Category</div>
+        ${lbl('Category')}
         <div class="rp-pending-edit-cat" id="eLiveCat${p.id}" style="margin-bottom:8px">${catOpts}</div>
-        <input class="rp-edit-input" id="eAddr${p.id}"  value="${esc(p.address)}" placeholder="Address" style="margin-bottom:8px;width:100%">
-        <textarea class="rp-edit-textarea" id="eDesc${p.id}"  placeholder="Description" style="width:100%;min-height:56px">${esc(p.desc||'')}</textarea>
+        ${lbl('Address')}<input class="rp-edit-input" id="eAddr${p.id}" value="${esc(p.address)}" placeholder="Address" style="margin-bottom:8px;width:100%">
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <div style="flex:1">${lbl('Latitude')}<input class="rp-edit-input" id="eLat${p.id}" value="${p.lat}" type="number" step="0.00001" style="width:100%"></div>
+          <div style="flex:1">${lbl('Longitude')}<input class="rp-edit-input" id="eLng${p.id}" value="${p.lng}" type="number" step="0.00001" style="width:100%"></div>
+        </div>
+        ${lbl('Description')}<textarea class="rp-edit-textarea" id="eDesc${p.id}" placeholder="Description" style="width:100%;min-height:56px;margin-bottom:8px">${esc(p.desc||'')}</textarea>
+        <div style="display:flex;align-items:center;gap:8px;background:var(--bg);border-radius:8px;padding:7px 9px;cursor:pointer;margin-bottom:6px" onclick="rpLiveToggleLT(${p.id})">
+          <span>⏳</span><div style="flex:1;font-size:12px;font-weight:700">Limited-time</div>
+          <div id="eLTSwitch${p.id}" class="lt-switch${p.limitedTime?' on':''}" style="transform:scale(0.85)"><div class="lt-knob"></div></div>
+        </div>
+        <div id="eLTDates${p.id}" style="display:${p.limitedTime?'flex':'none'};gap:8px;margin-bottom:8px">
+          <div style="flex:1">${lbl('Start')}<input class="rp-edit-input" type="date" id="eStart${p.id}" value="${startVal}" style="width:100%"></div>
+          <div style="flex:1">${lbl('End <span style="color:var(--accent)">*</span>')}<input class="rp-edit-input" type="date" id="eEnd${p.id}" value="${endVal}" style="width:100%"></div>
+        </div>
         <div class="rp-edit-actions" style="margin-top:8px">
-          <button class="rp-save"        onclick="saveEditPlace(${p.id})">💾 Save changes</button>
+          <button class="rp-save" onclick="saveEditPlace(${p.id})">💾 Save changes</button>
           <button class="rp-cancel-edit" onclick="toggleEditCard(${p.id})">Cancel</button>
         </div>
       </div>
@@ -2896,10 +3309,18 @@ function renderRpLive() {
   }).join('');
 }
 const _rpLiveCat = {};
+const _rpLiveLT  = {};
 function rp_setLiveCat(el, pid) {
   el.closest('.rp-pending-edit-cat').querySelectorAll('.rp-pending-edit-cat-opt').forEach(o => o.classList.remove('sel'));
   el.classList.add('sel');
   _rpLiveCat[pid] = el.dataset.cat;
+}
+function rpLiveToggleLT(pid) {
+  _rpLiveLT[pid] = !(_rpLiveLT[pid] ?? document.querySelector(`#eLTSwitch${pid}`)?.classList.contains('on'));
+  const sw = document.getElementById(`eLTSwitch${pid}`);
+  const dates = document.getElementById(`eLTDates${pid}`);
+  if (sw) sw.classList.toggle('on', _rpLiveLT[pid]);
+  if (dates) dates.style.display = _rpLiveLT[pid] ? 'flex' : 'none';
 }
 
 function renderRpReports() {
@@ -2948,10 +3369,25 @@ async function saveEditPlace(id) {
   const newDesc  = document.getElementById(`eDesc${id}`).value.trim();
   const newEmoji = document.getElementById(`eEmoji${id}`)?.value.trim() || p.emoji;
   const newCat   = _rpLiveCat[id] || document.querySelector(`#eLiveCat${id} .rp-pending-edit-cat-opt.sel`)?.dataset.cat || p.cat;
+  const newLat   = parseFloat(document.getElementById(`eLat${id}`)?.value) || p.lat;
+  const newLng   = parseFloat(document.getElementById(`eLng${id}`)?.value) || p.lng;
+  const useLT    = _rpLiveLT[id] ?? p.limitedTime ?? false;
+  const sVal     = document.getElementById(`eStart${id}`)?.value;
+  const eVal     = document.getElementById(`eEnd${id}`)?.value;
   if (!newName) { showToast('Name cannot be empty'); return; }
+  if (useLT && !eVal) { showToast('End date is required for limited-time places 📅'); return; }
+  const startTs  = sVal ? new Date(sVal).getTime() : null;
+  const endTs    = eVal ? new Date(eVal).getTime() : null;
+  if (useLT && startTs && endTs && endTs <= startTs) { showToast('End date must be after start date 📅'); return; }
   try {
-    await sb.update('places', id, { name: newName, address: newAddr || p.address, description: newDesc, emoji: newEmoji, category: newCat });
+    await sb.update('places', id, {
+      name: newName, address: newAddr || p.address, description: newDesc, emoji: newEmoji, category: newCat,
+      lat: newLat, lng: newLng,
+      limited_time: useLT, start_ts: startTs, end_ts: endTs
+    });
     p.name = newName; p.address = newAddr || p.address; p.desc = newDesc; p.emoji = newEmoji; p.cat = newCat;
+    p.lat = newLat; p.lng = newLng;
+    p.limitedTime = useLT; p.start = startTs; p.end = endTs;
     refreshMarker(p); renderRpLive();
     showToast(`"${p.name}" updated ✓`);
   } catch(e) { showToast('Could not save — check your connection'); }
