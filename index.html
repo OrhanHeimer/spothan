@@ -2016,8 +2016,8 @@ async function geocodeSearch(q, box, input, confirm){
   let source = 'photon';
 
   try {
-    // Bias toward Belgium + Netherlands (combined bounding box)
-    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=51.2&lon=4.8&zoom=8&limit=8&bbox=2.5,49.5,7.2,53.6&lang=nl`;
+    // Bias toward current map center but search worldwide
+    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=51.2&lon=4.8&limit=8`;
     const resp = await fetchWithTimeout(url, 7000);
     if (!resp.ok) throw new Error('photon non-ok');
     const data = await resp.json();
@@ -2036,10 +2036,10 @@ async function geocodeSearch(q, box, input, confirm){
       });
     }
   } catch(e1) {
-    // Photon failed — try Nominatim
+    // Photon failed — try Nominatim worldwide
     source = 'nominatim';
     try {
-      const url2 = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=6&addressdetails=1&accept-language=nl&countrycodes=be,nl`;
+      const url2 = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=6&addressdetails=1&accept-language=nl`;
       const resp2 = await fetchWithTimeout(url2, 7000);
       if (!resp2.ok) throw new Error('nominatim non-ok');
       const data2 = await resp2.json();
@@ -3802,15 +3802,25 @@ function closeLb() {
 let lbActiveTab = 'spots';
 let lbData = [];
 
+const LB_DESC = {
+  spots: 'Users who submitted the most approved locations to the map.',
+  likes: 'Users whose submitted locations received the most upvotes from the community.',
+  votes: 'Users with the most voting activity — helping rank what\'s worth visiting.'
+};
+
 function switchLbTab(tab) {
   lbActiveTab = tab;
   document.querySelectorAll('.lb-tab').forEach(b => b.classList.toggle('active', b.dataset.lb === tab));
+  const descEl = document.getElementById('lbDesc');
+  if (descEl) descEl.textContent = LB_DESC[tab] || '';
   renderLbList();
 }
 
 async function openLeaderboard() {
   const el = document.getElementById('lbOverlay');
   el.style.display = 'flex';
+  const descEl = document.getElementById('lbDesc');
+  if (descEl) descEl.textContent = LB_DESC[lbActiveTab] || '';
   document.getElementById('lbList').innerHTML = '<div class="lb-empty">⏳ Loading…</div>';
   try {
     const rows = await sb.select('leaderboard', 'order=spots.desc&limit=100');
@@ -3894,6 +3904,16 @@ saveVotes = function() {
   const last = parseInt(localStorage.getItem(LEADERBOARD_SYNC_KEY)||'0');
   if (Date.now() - last > 5*60*1000) syncLeaderboardStats();
 };
+
+function openPrivacy() {
+  document.getElementById('privacyDeviceId').textContent = DEVICE_ID;
+  document.getElementById('privacyOverlay').classList.add('on');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('privacyOverlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('privacyOverlay')) document.getElementById('privacyOverlay').classList.remove('on');
+  });
+});
 
 // ── CLOSE LEADERBOARD/USERNAME OVERLAYS ON BACKDROP CLICK ──
 document.addEventListener('DOMContentLoaded', () => {
@@ -4028,6 +4048,9 @@ markEngaged = function() {
     <div id="aboutInstallSection"></div>
     <div id="aboutEmailSection"></div>
     <button onclick="closeAboutPanel()" style="width:100%;padding:13px;background:var(--ink);color:white;border:none;border-radius:12px;font-family:'Bricolage Grotesque',sans-serif;font-size:14px;font-weight:700;cursor:pointer;">Got it ✓</button>
+    <div style="text-align:center;margin-top:12px">
+      <button onclick="closeAboutPanel();openPrivacy()" style="background:none;border:none;font-size:12px;color:var(--muted);cursor:pointer;text-decoration:underline">🔒 Privacy &amp; Data (GDPR)</button>
+    </div>
   </div>
 </div>
 
@@ -4044,6 +4067,45 @@ markEngaged = function() {
       <input type="checkbox" id="emailDontAsk" style="accent-color:var(--accent);">
       Don't ask me again
     </label>
+  </div>
+</div>
+<!-- ── PRIVACY MODAL ── -->
+<div class="about-overlay" id="privacyOverlay">
+  <div class="about-modal" style="padding-bottom:max(38px,calc(env(safe-area-inset-bottom,0px)+24px))">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <div style="font-family:'Bricolage Grotesque',sans-serif;font-size:18px;font-weight:800">🔒 Privacy &amp; Data</div>
+      <button onclick="document.getElementById('privacyOverlay').classList.remove('on')" style="background:var(--warm);border:none;border-radius:50%;width:32px;height:32px;font-size:14px;cursor:pointer;color:var(--ink2)">✕</button>
+    </div>
+    <div style="font-size:13px;color:var(--ink2);line-height:1.7;display:flex;flex-direction:column;gap:14px">
+      <div>
+        <div style="font-weight:700;color:var(--ink);margin-bottom:4px">What we store</div>
+        <div>Spothan stores a random <strong>device ID</strong> in your browser to remember your votes and submissions. No name, email, or personal data is collected unless you choose to provide it.</div>
+      </div>
+      <div>
+        <div style="font-weight:700;color:var(--ink);margin-bottom:4px">Leaderboard username</div>
+        <div>If you set a username, it is stored publicly alongside your device ID in our database to display on the leaderboard. You can change or delete it at any time.</div>
+      </div>
+      <div>
+        <div style="font-weight:700;color:var(--ink);margin-bottom:4px">Email (optional)</div>
+        <div>If you leave your email address, it is stored in our database and used only to send Spothan updates. We never share it with third parties.</div>
+      </div>
+      <div>
+        <div style="font-weight:700;color:var(--ink);margin-bottom:4px">Map data</div>
+        <div>Place submissions, votes, and reports are stored in our database. Submissions are public once approved. Your device ID is linked to your submissions.</div>
+      </div>
+      <div>
+        <div style="font-weight:700;color:var(--ink);margin-bottom:4px">Your rights (GDPR)</div>
+        <div>You have the right to access, correct, or delete your data. To request deletion of your data, contact us at <strong>hello@spothan.com</strong> with your device ID (shown below).</div>
+      </div>
+      <div style="background:var(--bg);border-radius:10px;padding:10px 12px;font-size:11px;color:var(--muted);word-break:break-all">
+        Your device ID: <span id="privacyDeviceId" style="font-family:monospace;color:var(--ink)"></span>
+      </div>
+      <div>
+        <div style="font-weight:700;color:var(--ink);margin-bottom:4px">Cookies &amp; tracking</div>
+        <div>Spothan does not use advertising cookies or third-party tracking. Map tiles are loaded from OpenStreetMap servers, which may log your IP address per their own privacy policy.</div>
+      </div>
+    </div>
+    <button onclick="document.getElementById('privacyOverlay').classList.remove('on')" style="width:100%;padding:13px;background:var(--ink);color:white;border:none;border-radius:12px;font-family:'Bricolage Grotesque',sans-serif;font-size:14px;font-weight:700;cursor:pointer;margin-top:20px">Got it ✓</button>
   </div>
 </div>
 <!-- ── USERNAME MODAL ── -->
@@ -4065,11 +4127,12 @@ markEngaged = function() {
       <div style="font-family:'Bricolage Grotesque',sans-serif;font-size:20px;font-weight:800">🏆 Leaderboard</div>
       <button onclick="closeLb()" style="background:var(--warm);border:none;border-radius:50%;width:32px;height:32px;font-size:14px;cursor:pointer;color:var(--ink2)">✕</button>
     </div>
-    <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap" id="lbTabs">
+    <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap" id="lbTabs">
       <button class="lb-tab active" data-lb="spots" onclick="switchLbTab('spots')">📍 Spots</button>
       <button class="lb-tab" data-lb="likes" onclick="switchLbTab('likes')">❤️ Likes</button>
       <button class="lb-tab" data-lb="votes" onclick="switchLbTab('votes')">👍 Votes</button>
     </div>
+    <div id="lbDesc" style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px;padding:9px 12px;background:var(--bg);border-radius:10px"></div>
     <div id="lbList" style="min-height:180px"></div>
     <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--warm)" id="lbMyRank"></div>
     <button onclick="closeLb();openUsernameModal()" style="width:100%;padding:11px;background:var(--ink);color:white;border:none;border-radius:12px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;margin-top:12px">✏️ Change my username</button>
