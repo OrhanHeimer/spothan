@@ -164,6 +164,18 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .admin-popup-save{flex:1;padding:8px;background:var(--acts);color:white;border:none;border-radius:9px;font-weight:700;font-size:12px;cursor:pointer;}
 .admin-popup-delete{padding:8px 12px;background:#ffe8e4;color:var(--accent);border:none;border-radius:9px;font-weight:700;font-size:12px;cursor:pointer;}
 .admin-popup-section{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid var(--warm);}
+/* Leaderboard */
+.lb-tab{padding:7px 14px;border-radius:50px;border:none;background:var(--warm);font-family:'Instrument Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink2);transition:all .15s;}
+.lb-tab.active{background:var(--ink);color:white;}
+.lb-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;margin-bottom:6px;background:var(--bg);}
+.lb-rank{font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:16px;width:28px;text-align:center;flex-shrink:0;}
+.lb-rank.gold{color:#f5a623;}
+.lb-rank.silver{color:#a0a0a0;}
+.lb-rank.bronze{color:#cd7f32;}
+.lb-name{flex:1;font-weight:700;font-size:14px;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.lb-name.me{color:var(--accent);}
+.lb-val{font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:15px;color:var(--ink);flex-shrink:0;}
+.lb-empty{text-align:center;color:var(--muted);font-size:13px;padding:24px 0;}
 /* Admin hours rows in popups */
 .admin-hours-row{display:flex;align-items:center;gap:5px;}
 /* Pending edit form in review panel */
@@ -748,6 +760,8 @@ const SEED_KEY = 'spothan_seeded_v1'; // tracks whether seed data has been loade
 const APPROVED_KEY = 'spothan_approved_v1'; // names of approved places to notify submitter
 const APPROVED_SUBMISSIONS_KEY = 'spothan_approved_submissions_v1';
 const VOTE_COOLDOWN = 10 * 60 * 1000;
+const USERNAME_KEY = 'spothan_username_v1';
+const LEADERBOARD_SYNC_KEY = 'spothan_lb_sync_v1';
 
 // now() instead of frozen NOW constant — fixes stale decay/expiry when app stays open
 function now() { return Date.now(); }
@@ -2193,23 +2207,26 @@ async function geocodeSearch(q, box, input, confirm){
 const adminGeoTimers = {};
 
 function initAdminGeocoder(inputEl, onSelect) {
-  // Create or reuse a suggestions box anchored below the input
   let box = inputEl._adminGeoBox;
   if (!box) {
     box = document.createElement('div');
     box.className = 'addr-suggestions';
-    box.style.position = 'fixed';
-    box.style.zIndex = '99999';
+    box.style.cssText = 'position:fixed;z-index:99999;overflow-y:auto;';
+    // Prevent Leaflet popup from closing when clicking inside the suggestions box
+    L.DomEvent.disableClickPropagation(box);
+    L.DomEvent.disableScrollPropagation(box);
     document.body.appendChild(box);
     inputEl._adminGeoBox = box;
   }
 
   function posBox() {
     const r = inputEl.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - r.bottom;
+    const maxH = Math.min(200, spaceBelow - 8);
     box.style.left  = r.left + 'px';
     box.style.width = r.width + 'px';
     box.style.top   = (r.bottom + 4) + 'px';
-    box.style.maxHeight = '180px';
+    box.style.maxHeight = maxH + 'px';
   }
 
   inputEl.addEventListener('input', () => {
@@ -2238,8 +2255,16 @@ function initAdminGeocoder(inputEl, onSelect) {
           const el = document.createElement('div');
           el.className = 'addr-sug-item';
           el.innerHTML = `<div class="addr-sug-name">${esc(name)}</div>${sub?`<div class="addr-sug-sub">${esc(sub)}</div>`:''}`;
+          // mousedown fires before blur — use it to select without closing
           el.addEventListener('mousedown', e => {
-            e.preventDefault();
+            e.preventDefault(); e.stopPropagation();
+            inputEl.value = storedAddr;
+            box.classList.remove('open'); box.innerHTML = '';
+            onSelect({ lat: latC, lng: lngC, address: storedAddr });
+          });
+          // touch support
+          el.addEventListener('touchend', e => {
+            e.preventDefault(); e.stopPropagation();
             inputEl.value = storedAddr;
             box.classList.remove('open'); box.innerHTML = '';
             onSelect({ lat: latC, lng: lngC, address: storedAddr });
@@ -2253,8 +2278,10 @@ function initAdminGeocoder(inputEl, onSelect) {
     }, 350);
   });
 
-  inputEl.addEventListener('blur', () => setTimeout(() => box.classList.remove('open'), 200));
+  inputEl.addEventListener('blur', () => setTimeout(() => box.classList.remove('open'), 250));
   inputEl.addEventListener('focus', () => { if (box.children.length && inputEl.value.length > 1) posBox(); });
+  // Reposition on scroll/resize
+  inputEl.addEventListener('focus', () => window.addEventListener('scroll', posBox, {passive:true, once:true}));
 }
 async function openDataPanel(){
   const pin = prompt('🔐 Data PIN:');
@@ -3674,8 +3701,145 @@ if (new URLSearchParams(location.search).get('action') === 'add') {
   window.addEventListener('spothan:ready', () => openModal(), {once: true});
 }
 
+// ── USERNAME ──
+let myUsername = localStorage.getItem(USERNAME_KEY) || '';
+
+function openUsernameModal() {
+  document.getElementById('usernameInput').value = myUsername;
+  document.getElementById('usernameOverlay').classList.add('on');
+  setTimeout(() => document.getElementById('usernameInput').focus(), 200);
+}
+
+async function saveUsername() {
+  const val = document.getElementById('usernameInput').value.trim();
+  if (val.length < 2) { showToast('Username must be at least 2 characters'); return; }
+  myUsername = val;
+  localStorage.setItem(USERNAME_KEY, myUsername);
+  document.getElementById('usernameOverlay').classList.remove('on');
+  showToast(`Username set to "${myUsername}" ✓`);
+  await syncLeaderboardStats(); // push updated name immediately
+}
+
+function promptUsernameIfNeeded() {
+  if (!myUsername) setTimeout(() => openUsernameModal(), 1200);
+}
+
+// ── LEADERBOARD ──
+let lbActiveTab = 'spots';
+let lbData = [];
+
+function switchLbTab(tab) {
+  lbActiveTab = tab;
+  document.querySelectorAll('.lb-tab').forEach(b => b.classList.toggle('active', b.dataset.lb === tab));
+  renderLbList();
+}
+
+async function openLeaderboard() {
+  document.getElementById('lbOverlay').classList.add('on');
+  document.getElementById('lbList').innerHTML = '<div class="lb-empty">⏳ Loading…</div>';
+  try {
+    const rows = await sb.select('leaderboard', 'order=spots.desc&limit=100');
+    lbData = rows || [];
+  } catch(e) {
+    // Fallback: use local data only — leaderboard table may not exist yet
+    lbData = [];
+  }
+  renderLbList();
+}
+
+function renderLbList() {
+  const el = document.getElementById('lbList');
+  const myRankEl = document.getElementById('lbMyRank');
+  const key = lbActiveTab; // 'spots' | 'likes' | 'votes'
+  const sorted = [...lbData].sort((a,b) => (b[key]||0) - (a[key]||0));
+  const top10 = sorted.slice(0, 10);
+
+  if (!top10.length) {
+    el.innerHTML = '<div class="lb-empty">No data yet — be the first! 🚀</div>';
+    myRankEl.innerHTML = '';
+    return;
+  }
+
+  const rankSymbol = (i) => i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`;
+  const rankCls    = (i) => i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+  const label = {spots:'Spots', likes:'Likes', votes:'Votes'};
+
+  el.innerHTML = top10.map((row, i) => {
+    const isMe = row.device_id === DEVICE_ID;
+    return `<div class="lb-row" style="${isMe?'background:#fff8f6;border:1.5px solid var(--accent)':''}">
+      <div class="lb-rank ${rankCls(i)}">${rankSymbol(i)}</div>
+      <div class="lb-name${isMe?' me':''}">${esc(row.username||'Anonymous')}${isMe?' (you)':''}</div>
+      <div class="lb-val">${(row[key]||0).toLocaleString()}</div>
+    </div>`;
+  }).join('');
+
+  // Show my rank if outside top 10
+  const myIdx = sorted.findIndex(r => r.device_id === DEVICE_ID);
+  const myRow = sorted[myIdx];
+  if (myIdx >= 10 && myRow) {
+    myRankEl.innerHTML = `<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Your rank in ${label[key]}</div>
+      <div class="lb-row" style="background:#fff8f6;border:1.5px solid var(--accent)">
+        <div class="lb-rank">#${myIdx+1}</div>
+        <div class="lb-name me">${esc(myRow.username||'Anonymous')} (you)</div>
+        <div class="lb-val">${(myRow[key]||0).toLocaleString()}</div>
+      </div>`;
+  } else {
+    myRankEl.innerHTML = '';
+  }
+}
+
+async function syncLeaderboardStats() {
+  if (!myUsername) return; // don't sync anonymous users
+  const myPlaces  = places.filter(p => p.deviceId === DEVICE_ID);
+  const spots     = myPlaces.length;
+  const likes     = myPlaces.reduce((s, p) => s + rawCounts(p).up, 0);
+  const voteCount = Object.keys(voteLocks).filter(k => /^\d+$/.test(k)).length;
+  try {
+    await sb.upsert('leaderboard', {
+      device_id: DEVICE_ID,
+      username: myUsername,
+      spots,
+      likes,
+      votes: voteCount,
+      updated_at: new Date().toISOString()
+    });
+    localStorage.setItem(LEADERBOARD_SYNC_KEY, Date.now().toString());
+  } catch(e) {
+    console.warn('[Spothan] Leaderboard sync failed:', e);
+  }
+}
+
+// Sync leaderboard after major events
+const _origSyncApproved = syncApprovedSubmissions;
+syncApprovedSubmissions = function() {
+  _origSyncApproved();
+  syncLeaderboardStats();
+};
+const _origSaveVotes = saveVotes;
+saveVotes = function() {
+  _origSaveVotes();
+  // throttle — only sync once per 5 min
+  const last = parseInt(localStorage.getItem(LEADERBOARD_SYNC_KEY)||'0');
+  if (Date.now() - last > 5*60*1000) syncLeaderboardStats();
+};
+
+// ── CLOSE LEADERBOARD/USERNAME OVERLAYS ON BACKDROP CLICK ──
+document.addEventListener('DOMContentLoaded', () => {
+  ['lbOverlay','usernameOverlay'].forEach(id => {
+    document.getElementById(id).addEventListener('click', e => {
+      if (e.target === document.getElementById(id)) document.getElementById(id).classList.remove('on');
+    });
+  });
+});
+
 initMap();
 showOnboardingIfFirst();
+// Prompt for username after first engagement
+const _origMarkEngaged = markEngaged;
+markEngaged = function() {
+  _origMarkEngaged();
+  promptUsernameIfNeeded();
+};
 
 // ── EMERGENCY SEED BOOTSTRAP ──
 // Runs immediately after page loads. If localStorage has no places at all,
@@ -3785,6 +3949,8 @@ showOnboardingIfFirst();
     </div>
     <div class="about-section-label">This device</div>
     <div id="activityPanel"></div>
+    <div class="about-section-label">Leaderboard</div>
+    <button onclick="closeAboutPanel();openLeaderboard()" style="width:100%;padding:13px 16px;background:linear-gradient(135deg,#1a0a00,#3a1000);color:white;border:none;border-radius:14px;font-family:'Bricolage Grotesque',sans-serif;font-size:15px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:14px">🏆 Leaderboard</button>
     <div class="about-section-label">App &amp; Notifications</div>
     <div id="aboutInstallSection"></div>
     <div id="aboutEmailSection"></div>
@@ -3805,6 +3971,35 @@ showOnboardingIfFirst();
       <input type="checkbox" id="emailDontAsk" style="accent-color:var(--accent);">
       Don't ask me again
     </label>
+  </div>
+</div>
+<!-- ── USERNAME MODAL ── -->
+<div class="about-overlay" id="usernameOverlay">
+  <div class="about-modal" style="padding-bottom:max(38px,calc(env(safe-area-inset-bottom,0px)+24px))">
+    <div style="font-family:'Bricolage Grotesque',sans-serif;font-size:20px;font-weight:800;margin-bottom:6px">👤 Your Username</div>
+    <div style="font-size:13px;color:var(--ink2);line-height:1.6;margin-bottom:16px">Pick a name that shows on the leaderboard. You can change it anytime.</div>
+    <input id="usernameInput" class="f-in" placeholder="e.g. HiddenGemHunter" maxlength="24" autocomplete="off" style="margin-bottom:8px">
+    <div id="usernameHint" style="font-size:11px;color:var(--muted);margin-bottom:14px">2–24 characters · shown publicly on leaderboards</div>
+    <button onclick="saveUsername()" style="width:100%;padding:14px;background:var(--accent);color:white;border:none;border-radius:14px;font-family:'Bricolage Grotesque',sans-serif;font-size:15px;font-weight:800;cursor:pointer">Save →</button>
+    <button onclick="document.getElementById('usernameOverlay').classList.remove('on')" style="width:100%;padding:12px;background:none;border:none;font-size:13px;color:var(--muted);cursor:pointer;margin-top:6px">Cancel</button>
+  </div>
+</div>
+
+<!-- ── LEADERBOARD MODAL ── -->
+<div class="about-overlay" id="lbOverlay">
+  <div class="about-modal" style="padding-bottom:max(38px,calc(env(safe-area-inset-bottom,0px)+24px))">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <div style="font-family:'Bricolage Grotesque',sans-serif;font-size:20px;font-weight:800">🏆 Leaderboard</div>
+      <button onclick="document.getElementById('lbOverlay').classList.remove('on')" style="background:var(--warm);border:none;border-radius:50%;width:32px;height:32px;font-size:14px;cursor:pointer;color:var(--ink2)">✕</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap" id="lbTabs">
+      <button class="lb-tab active" data-lb="spots" onclick="switchLbTab('spots')">📍 Spots</button>
+      <button class="lb-tab" data-lb="likes" onclick="switchLbTab('likes')">❤️ Likes</button>
+      <button class="lb-tab" data-lb="votes" onclick="switchLbTab('votes')">👍 Votes</button>
+    </div>
+    <div id="lbList" style="min-height:180px"></div>
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--warm)" id="lbMyRank"></div>
+    <button onclick="openUsernameModal()" style="width:100%;padding:11px;background:var(--ink);color:white;border:none;border-radius:12px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;margin-top:12px">✏️ Change my username</button>
   </div>
 </div>
 </body>
