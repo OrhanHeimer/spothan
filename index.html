@@ -1383,38 +1383,6 @@ async function bootMap(center, zoom) {
   initHours();
   initEmojiPicker();
   initGeocoder();
-  // Wire admin geocoder whenever a popup opens
-  map.on('popupopen', () => {
-    // Live place popup address inputs
-    document.querySelectorAll('[id^="alAddr"]').forEach(input => {
-      if (input._adminGeoAttached) return;
-      input._adminGeoAttached = true;
-      const id = parseInt(input.id.replace('alAddr', ''));
-      initAdminGeocoder(input, ({lat, lng, address}) => {
-        const latEl = document.getElementById(`alLat${id}`);
-        const lngEl = document.getElementById(`alLng${id}`);
-        if (latEl) latEl.value = lat.toFixed(6);
-        if (lngEl) lngEl.value = lng.toFixed(6);
-        // Move the marker preview on the map
-        const m = markers[id];
-        if (m) m.setLatLng([lat, lng]);
-      });
-    });
-    // Pending popup address inputs
-    document.querySelectorAll('[id^="apAddr"]').forEach(input => {
-      if (input._adminGeoAttached) return;
-      input._adminGeoAttached = true;
-      const id = parseInt(input.id.replace('apAddr', ''));
-      initAdminGeocoder(input, ({lat, lng, address}) => {
-        const latEl = document.getElementById(`apLat${id}`);
-        const lngEl = document.getElementById(`apLng${id}`);
-        if (latEl) latEl.value = lat.toFixed(6);
-        if (lngEl) lngEl.value = lng.toFixed(6);
-        const m = adminPendingMarkers[id];
-        if (m) m.setLatLng([lat, lng]);
-      });
-    });
-  });
   if (supabaseReady) initRealtime();
 
   // Handle URL hashes AFTER map is ready
@@ -1471,9 +1439,14 @@ function addMarker(p) {
   const icon=L.divIcon({className:'',html:`<div class="map-pin ${pinCls}">${ring}<div class="map-pin-inner">${p.emoji}</div><div class="pin-score ${scCls}">${scLbl}</div></div>`,iconSize:[38,38],iconAnchor:[19,38],popupAnchor:[0,-44]});
   const dl=daysLeft(p);
   const eBadge=isLTPlace(p)?`<div class="cp-ebadge ${urgent?'urgent':'normal'}">${urgent?'🔴':'🟡'} ${dl===0?'Ends today':dl===1?'Ends tomorrow':`${dl} days left`}</div>`:'';
+  const normalPopup = `<div class="cp"><div class="cp-top"><span class="cp-emoji">${esc(p.emoji)}</span><div><div class="cp-name">${esc(p.name)}</div></div></div><div class="cp-sub">📍 ${esc(p.address)}</div>${eBadge}<div class="cp-votes"><span class="cp-up">👍 ${raw.up}</span><div class="cp-bar"><div class="cp-fill" style="width:${pct}%"></div></div><span class="cp-dn">👎 ${raw.dn}</span></div><button class="cp-btn" onclick="openSheet(${p.id})">View Details →</button></div>`;
   const m=L.marker([p.lat,p.lng],{icon});
-  m.bindPopup(L.popup({closeButton:false,maxWidth:300}).setContent(() => adminMode ? buildAdminLivePopup(p) : `<div class="cp"><div class="cp-top"><span class="cp-emoji">${esc(p.emoji)}</span><div><div class="cp-name">${esc(p.name)}</div></div></div><div class="cp-sub">📍 ${esc(p.address)}</div>${eBadge}<div class="cp-votes"><span class="cp-up">👍 ${raw.up}</span><div class="cp-bar"><div class="cp-fill" style="width:${pct}%"></div></div><span class="cp-dn">👎 ${raw.dn}</span></div><button class="cp-btn" onclick="openSheet(${p.id})">View Details →</button></div>`));
-  m.on('click', () => { m.setPopupContent(adminMode ? buildAdminLivePopup(p) : `<div class="cp"><div class="cp-top"><span class="cp-emoji">${esc(p.emoji)}</span><div><div class="cp-name">${esc(p.name)}</div></div></div><div class="cp-sub">📍 ${esc(p.address)}</div>${eBadge}<div class="cp-votes"><span class="cp-up">👍 ${raw.up}</span><div class="cp-bar"><div class="cp-fill" style="width:${pct}%"></div></div><span class="cp-dn">👎 ${raw.dn}</span></div><button class="cp-btn" onclick="openSheet(${p.id})">View Details →</button></div>`); m.openPopup(); });
+  m.bindPopup(L.popup({closeButton:false,maxWidth:300}).setContent(normalPopup));
+  m.on('click', () => {
+    if (adminMode) { openAdminPanel(p); return; }
+    m.setPopupContent(normalPopup);
+    m.openPopup();
+  });
   markers[p.id]=m;
   clusterGroup.addLayer(m);
 }
@@ -2202,7 +2175,43 @@ async function geocodeSearch(q, box, input, confirm){
   box.classList.add('open');
 }
 
-// ── ADMIN GEOCODER — address search for admin popups ──
+// ── ADMIN EDIT PANEL (fixed side panel — no Leaflet popup clipping) ──
+let _adminPanelPlaceId = null;
+
+function openAdminPanel(p) {
+  _adminPanelPlaceId = p.id;
+  map.closePopup();
+  document.getElementById('adminEditContent').innerHTML = buildAdminLivePopup(p);
+  document.getElementById('adminEditPanel').style.display = 'block';
+  // Wire geocoder directly — no popup interference
+  const addrInput = document.getElementById(`alAddr${p.id}`);
+  if (addrInput && !addrInput._adminGeoAttached) {
+    addrInput._adminGeoAttached = true;
+    initAdminGeocoder(addrInput, ({lat, lng, address}) => {
+      const latEl = document.getElementById(`alLat${p.id}`);
+      const lngEl = document.getElementById(`alLng${p.id}`);
+      if (latEl) latEl.value = lat.toFixed(6);
+      if (lngEl) lngEl.value = lng.toFixed(6);
+    });
+  }
+}
+
+function closeAdminPanel() {
+  document.getElementById('adminEditPanel').style.display = 'none';
+  _adminPanelPlaceId = null;
+}
+
+// Patch adminSaveLive / adminDeleteLive to close the panel
+const _origAdminSaveLive = adminSaveLive;
+adminSaveLive = async function(id) {
+  await _origAdminSaveLive(id);
+  closeAdminPanel();
+};
+const _origAdminDeleteLive = adminDeleteLive;
+adminDeleteLive = async function(id) {
+  await _origAdminDeleteLive(id);
+  closeAdminPanel();
+};
 // adminGeoTimers: keyed by input element id
 const adminGeoTimers = {};
 
@@ -2237,44 +2246,73 @@ function initAdminGeocoder(inputEl, onSelect) {
     inputEl._adminGeoTimer = setTimeout(async () => {
       box.innerHTML = '<div class="addr-sug-item" style="color:var(--muted);font-style:italic;pointer-events:none">🔍 Searching…</div>';
       box.classList.add('open');
+      let results = null;
       try {
-        const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=51.2&lon=4.8&zoom=8&limit=6&bbox=2.5,49.5,7.2,53.6&lang=nl`;
+        const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=51.2&lon=4.8&limit=6`;
         const resp = await fetchWithTimeout(url, 7000);
+        if (!resp.ok) throw new Error('photon fail');
         const data = await resp.json();
         const feats = (data.features||[]).filter(f=>f.geometry&&Array.isArray(f.geometry.coordinates)&&f.geometry.coordinates.length===2);
-        if (!feats.length) { box.innerHTML='<div class="addr-sug-item" style="color:var(--muted);pointer-events:none">No results</div>'; return; }
-        box.innerHTML = '';
-        feats.slice(0,6).forEach(res => {
-          const pr = res.properties;
-          const lngC = res.geometry.coordinates[0], latC = res.geometry.coordinates[1];
-          const street = pr.street ? (pr.housenumber ? pr.street+' '+pr.housenumber : pr.street) : '';
-          const city = pr.city||pr.town||pr.village||pr.county||'';
-          const name = pr.name||street||city||'?';
-          const sub = [name!==street&&street?street:'', city, pr.country].filter(s=>s&&s!==name).join(', ');
-          const storedAddr = [pr.name||street, city].filter(Boolean).join(', ')||name||'Unknown location';
-          const el = document.createElement('div');
-          el.className = 'addr-sug-item';
-          el.innerHTML = `<div class="addr-sug-name">${esc(name)}</div>${sub?`<div class="addr-sug-sub">${esc(sub)}</div>`:''}`;
-          // mousedown fires before blur — use it to select without closing
-          el.addEventListener('mousedown', e => {
-            e.preventDefault(); e.stopPropagation();
-            inputEl.value = storedAddr;
-            box.classList.remove('open'); box.innerHTML = '';
-            onSelect({ lat: latC, lng: lngC, address: storedAddr });
+        if (feats.length) {
+          results = feats.map(res => {
+            const pr = res.properties;
+            const lngC = res.geometry.coordinates[0], latC = res.geometry.coordinates[1];
+            const street = pr.street ? (pr.housenumber ? pr.street+' '+pr.housenumber : pr.street) : '';
+            const city = pr.city||pr.town||pr.village||pr.county||'';
+            const name = pr.name||street||city||'?';
+            const sub = [name!==street&&street?street:'', city, pr.country].filter(s=>s&&s!==name).join(', ');
+            const storedAddr = [pr.name||street, city].filter(Boolean).join(', ')||name||'Unknown location';
+            return {name, sub, storedAddr, lat:latC, lng:lngC};
           });
-          // touch support
-          el.addEventListener('touchend', e => {
-            e.preventDefault(); e.stopPropagation();
-            inputEl.value = storedAddr;
-            box.classList.remove('open'); box.innerHTML = '';
-            onSelect({ lat: latC, lng: lngC, address: storedAddr });
-          });
-          box.appendChild(el);
-        });
-        box.classList.add('open');
-      } catch(e) {
-        box.innerHTML = '<div class="addr-sug-item" style="color:var(--accent);pointer-events:none">⚠ Search unavailable</div>';
+        }
+      } catch(e) { /* fall through to nominatim */ }
+
+      if (!results) {
+        try {
+          const url2 = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=6&addressdetails=1&accept-language=nl`;
+          const resp2 = await fetchWithTimeout(url2, 7000);
+          const data2 = await resp2.json();
+          if (data2.length) {
+            results = data2.map(r => {
+              const a = r.address||{};
+              const street = a.road ? (a.house_number ? a.road+' '+a.house_number : a.road) : '';
+              const city = a.city||a.town||a.village||a.municipality||'';
+              const name = r.name||street||city||r.display_name.split(',')[0]||'?';
+              const sub = [street&&street!==name?street:'', city, a.country].filter(s=>s&&s!==name).join(', ');
+              const storedAddr = [name!==street&&r.name?r.name:street, city].filter(Boolean).join(', ')||name||'Unknown location';
+              return {name, sub, storedAddr, lat:parseFloat(r.lat), lng:parseFloat(r.lon)};
+            });
+          }
+        } catch(e2) {
+          box.innerHTML = '<div class="addr-sug-item" style="color:var(--accent);pointer-events:none">⚠ Search unavailable</div>';
+          return;
+        }
       }
+
+      box.innerHTML = '';
+      if (!results || !results.length) {
+        box.innerHTML = '<div class="addr-sug-item" style="color:var(--muted);pointer-events:none">No results found</div>';
+        box.classList.add('open'); return;
+      }
+      results.forEach(r => {
+        const el = document.createElement('div');
+        el.className = 'addr-sug-item';
+        el.innerHTML = `<div class="addr-sug-name">${esc(r.name)}</div>${r.sub?`<div class="addr-sug-sub">${esc(r.sub)}</div>`:''}`;
+        el.addEventListener('mousedown', e => {
+          e.preventDefault(); e.stopPropagation();
+          inputEl.value = r.storedAddr;
+          box.classList.remove('open'); box.innerHTML = '';
+          onSelect({ lat: r.lat, lng: r.lng, address: r.storedAddr });
+        });
+        el.addEventListener('touchend', e => {
+          e.preventDefault(); e.stopPropagation();
+          inputEl.value = r.storedAddr;
+          box.classList.remove('open'); box.innerHTML = '';
+          onSelect({ lat: r.lat, lng: r.lng, address: r.storedAddr });
+        });
+        box.appendChild(el);
+      });
+      box.classList.add('open');
     }, 350);
   });
 
@@ -2651,7 +2689,24 @@ function addAdminPendingMarker(p) {
   const m = L.marker([p.lat, p.lng], {icon, zIndexOffset: 2000});
   const popupContent = () => buildAdminPendingPopup(p);
   m.bindPopup(L.popup({closeButton:false, maxWidth:300, minWidth:260}).setContent(popupContent()));
-  m.on('click', () => { m.setPopupContent(buildAdminPendingPopup(p)); m.openPopup(); });
+  m.on('click', () => {
+    m.setPopupContent(buildAdminPendingPopup(p));
+    m.openPopup();
+    // Wire geocoder after popup renders
+    setTimeout(() => {
+      const addrInput = document.getElementById(`apAddr${p.id}`);
+      if (addrInput && !addrInput._adminGeoAttached) {
+        addrInput._adminGeoAttached = true;
+        initAdminGeocoder(addrInput, ({lat, lng, address}) => {
+          const latEl = document.getElementById(`apLat${p.id}`);
+          const lngEl = document.getElementById(`apLng${p.id}`);
+          if (latEl) latEl.value = lat.toFixed(6);
+          if (lngEl) lngEl.value = lng.toFixed(6);
+          m.setLatLng([lat, lng]);
+        });
+      }
+    }, 80);
+  });
   adminPendingMarkers[p.id] = m;
   m.addTo(map);
 }
@@ -3706,22 +3761,41 @@ let myUsername = localStorage.getItem(USERNAME_KEY) || '';
 
 function openUsernameModal() {
   document.getElementById('usernameInput').value = myUsername;
-  document.getElementById('usernameOverlay').classList.add('on');
-  setTimeout(() => document.getElementById('usernameInput').focus(), 200);
+  document.getElementById('usernameHint').textContent = '2–24 characters · shown publicly';
+  const el = document.getElementById('usernameOverlay');
+  el.style.display = 'flex';
+  setTimeout(() => document.getElementById('usernameInput').focus(), 100);
 }
 
 async function saveUsername() {
   const val = document.getElementById('usernameInput').value.trim();
-  if (val.length < 2) { showToast('Username must be at least 2 characters'); return; }
+  if (val.length < 2) { showToast('Need at least 2 characters'); return; }
+  const hint = document.getElementById('usernameHint');
+  hint.textContent = 'Checking…'; hint.style.color = 'var(--muted)';
+  // Check for duplicate username in DB (skip check if same as current)
+  if (val.toLowerCase() !== myUsername.toLowerCase()) {
+    try {
+      const rows = await sb.select('leaderboard', `username=ilike.${encodeURIComponent(val)}&device_id=neq.${encodeURIComponent(DEVICE_ID)}&limit=1`);
+      if (rows && rows.length > 0) {
+        hint.textContent = '❌ That username is taken — try another';
+        hint.style.color = 'var(--accent)';
+        return;
+      }
+    } catch(e) { /* network fail — allow anyway */ }
+  }
   myUsername = val;
   localStorage.setItem(USERNAME_KEY, myUsername);
-  document.getElementById('usernameOverlay').classList.remove('on');
+  document.getElementById('usernameOverlay').style.display = 'none';
   showToast(`Username set to "${myUsername}" ✓`);
-  await syncLeaderboardStats(); // push updated name immediately
+  await syncLeaderboardStats();
 }
 
 function promptUsernameIfNeeded() {
   if (!myUsername) setTimeout(() => openUsernameModal(), 1200);
+}
+
+function closeLb() {
+  document.getElementById('lbOverlay').style.display = 'none';
 }
 
 // ── LEADERBOARD ──
@@ -3735,15 +3809,13 @@ function switchLbTab(tab) {
 }
 
 async function openLeaderboard() {
-  document.getElementById('lbOverlay').classList.add('on');
+  const el = document.getElementById('lbOverlay');
+  el.style.display = 'flex';
   document.getElementById('lbList').innerHTML = '<div class="lb-empty">⏳ Loading…</div>';
   try {
     const rows = await sb.select('leaderboard', 'order=spots.desc&limit=100');
     lbData = rows || [];
-  } catch(e) {
-    // Fallback: use local data only — leaderboard table may not exist yet
-    lbData = [];
-  }
+  } catch(e) { lbData = []; }
   renderLbList();
 }
 
@@ -3825,10 +3897,11 @@ saveVotes = function() {
 
 // ── CLOSE LEADERBOARD/USERNAME OVERLAYS ON BACKDROP CLICK ──
 document.addEventListener('DOMContentLoaded', () => {
-  ['lbOverlay','usernameOverlay'].forEach(id => {
-    document.getElementById(id).addEventListener('click', e => {
-      if (e.target === document.getElementById(id)) document.getElementById(id).classList.remove('on');
-    });
+  document.getElementById('lbOverlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('lbOverlay')) closeLb();
+  });
+  document.getElementById('usernameOverlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('usernameOverlay')) document.getElementById('usernameOverlay').style.display='none';
   });
 });
 
@@ -3974,23 +4047,23 @@ markEngaged = function() {
   </div>
 </div>
 <!-- ── USERNAME MODAL ── -->
-<div class="about-overlay" id="usernameOverlay">
-  <div class="about-modal" style="padding-bottom:max(38px,calc(env(safe-area-inset-bottom,0px)+24px))">
-    <div style="font-family:'Bricolage Grotesque',sans-serif;font-size:20px;font-weight:800;margin-bottom:6px">👤 Your Username</div>
-    <div style="font-size:13px;color:var(--ink2);line-height:1.6;margin-bottom:16px">Pick a name that shows on the leaderboard. You can change it anytime.</div>
-    <input id="usernameInput" class="f-in" placeholder="e.g. HiddenGemHunter" maxlength="24" autocomplete="off" style="margin-bottom:8px">
-    <div id="usernameHint" style="font-size:11px;color:var(--muted);margin-bottom:14px">2–24 characters · shown publicly on leaderboards</div>
-    <button onclick="saveUsername()" style="width:100%;padding:14px;background:var(--accent);color:white;border:none;border-radius:14px;font-family:'Bricolage Grotesque',sans-serif;font-size:15px;font-weight:800;cursor:pointer">Save →</button>
-    <button onclick="document.getElementById('usernameOverlay').classList.remove('on')" style="width:100%;padding:12px;background:none;border:none;font-size:13px;color:var(--muted);cursor:pointer;margin-top:6px">Cancel</button>
+<div id="usernameOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(13,13,13,.6);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px;">
+  <div style="background:var(--surface);border-radius:24px;padding:28px 22px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <div style="font-family:'Bricolage Grotesque',sans-serif;font-size:22px;font-weight:800;margin-bottom:6px">👤 Your Username</div>
+    <div style="font-size:13px;color:var(--ink2);line-height:1.6;margin-bottom:18px">Pick a name shown on the leaderboard. Changeable anytime.</div>
+    <input id="usernameInput" class="f-in" placeholder="e.g. HiddenGemHunter" maxlength="24" autocomplete="off" style="margin-bottom:6px;width:100%">
+    <div id="usernameHint" style="font-size:11px;color:var(--muted);margin-bottom:18px">2–24 characters · shown publicly</div>
+    <button onclick="saveUsername()" style="width:100%;padding:14px;background:var(--accent);color:white;border:none;border-radius:14px;font-family:'Bricolage Grotesque',sans-serif;font-size:15px;font-weight:800;cursor:pointer;margin-bottom:8px">Save →</button>
+    <button onclick="document.getElementById('usernameOverlay').style.display='none'" style="width:100%;padding:11px;background:none;border:none;font-size:13px;color:var(--muted);cursor:pointer">Cancel</button>
   </div>
 </div>
 
 <!-- ── LEADERBOARD MODAL ── -->
-<div class="about-overlay" id="lbOverlay">
-  <div class="about-modal" style="padding-bottom:max(38px,calc(env(safe-area-inset-bottom,0px)+24px))">
+<div id="lbOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(13,13,13,.6);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);align-items:flex-start;justify-content:center;padding:20px;padding-top:max(40px,env(safe-area-inset-top,40px));overflow-y:auto;">
+  <div style="background:var(--surface);border-radius:24px;padding:24px 20px 28px;width:100%;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,.3);">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
       <div style="font-family:'Bricolage Grotesque',sans-serif;font-size:20px;font-weight:800">🏆 Leaderboard</div>
-      <button onclick="document.getElementById('lbOverlay').classList.remove('on')" style="background:var(--warm);border:none;border-radius:50%;width:32px;height:32px;font-size:14px;cursor:pointer;color:var(--ink2)">✕</button>
+      <button onclick="closeLb()" style="background:var(--warm);border:none;border-radius:50%;width:32px;height:32px;font-size:14px;cursor:pointer;color:var(--ink2)">✕</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap" id="lbTabs">
       <button class="lb-tab active" data-lb="spots" onclick="switchLbTab('spots')">📍 Spots</button>
@@ -3999,8 +4072,16 @@ markEngaged = function() {
     </div>
     <div id="lbList" style="min-height:180px"></div>
     <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--warm)" id="lbMyRank"></div>
-    <button onclick="openUsernameModal()" style="width:100%;padding:11px;background:var(--ink);color:white;border:none;border-radius:12px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;margin-top:12px">✏️ Change my username</button>
+    <button onclick="closeLb();openUsernameModal()" style="width:100%;padding:11px;background:var(--ink);color:white;border:none;border-radius:12px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;margin-top:12px">✏️ Change my username</button>
   </div>
+</div>
+<!-- ── ADMIN EDIT PANEL (fixed overlay, replaces Leaflet popup in admin mode) ── -->
+<div id="adminEditPanel" style="display:none;position:fixed;top:0;right:0;bottom:0;width:320px;max-width:100vw;z-index:9100;background:var(--surface);box-shadow:-4px 0 24px rgba(0,0,0,.18);overflow-y:auto;padding:16px 16px 40px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;position:sticky;top:0;background:var(--surface);padding-bottom:10px;border-bottom:1px solid var(--warm);">
+    <div style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:15px;color:var(--ink)">✏️ Edit Place</div>
+    <button onclick="closeAdminPanel()" style="background:var(--warm);border:none;border-radius:50%;width:30px;height:30px;font-size:13px;cursor:pointer;color:var(--ink2)">✕</button>
+  </div>
+  <div id="adminEditContent"></div>
 </div>
 </body>
 </html>
