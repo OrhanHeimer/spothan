@@ -447,7 +447,7 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .approved-banner-sub{font-size:12px;opacity:.85;}
 .approved-banner-close{background:rgba(255,255,255,.25);border:none;color:white;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 
-.empty-state{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;z-index:50;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-radius:20px;padding:28px 32px;box-shadow:0 4px 24px rgba(13,13,13,.12);}
+.empty-state{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:all;z-index:50;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-radius:20px;padding:28px 32px;box-shadow:0 4px 24px rgba(13,13,13,.12);}
 .empty-state .ei{font-size:52px;margin-bottom:12px;}
 .empty-state h2{font-family:'Bricolage Grotesque',sans-serif;font-size:22px;font-weight:800;color:var(--ink2);margin-bottom:8px;}
 .empty-state p{font-size:14px;color:var(--muted);max-width:220px;line-height:1.5;margin:0 auto;}
@@ -499,7 +499,7 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
     </div>
     <button class="icon-btn" id="locateBtn">📍</button>
     <div class="fb-btn-wrap">
-      <button class="icon-btn" id="feedbackBtn" title="Send feedback">💬</button>
+      <button class="icon-btn" id="lbTopBtn" title="Leaderboard" onclick="openLeaderboard()">🏆</button>
       <div class="fb-notif" id="fbNotif"></div>
     </div>
   </div>
@@ -547,6 +547,7 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
   <div class="ei">📍</div>
   <h2>No places yet</h2>
   <p>Tap <strong style="color:var(--accent)">+</strong> to add the first spot in your area</p>
+  <button onclick="document.getElementById('emptyState').style.display='none'" style="margin-top:12px;padding:6px 18px;background:var(--warm);border:none;border-radius:50px;font-family:'Instrument Sans',sans-serif;font-size:12px;font-weight:600;color:var(--ink2);cursor:pointer">Close ✕</button>
 </div>
 
 <button class="fab" id="fabBtn">+</button>
@@ -584,6 +585,10 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
         <input class="f-in" id="pAddr" placeholder="Start typing a street or place name…" autocomplete="off">
         <div class="addr-suggestions" id="addrSuggestions"></div>
       </div>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button type="button" id="pickOnMapBtn" onclick="startMapPick()" style="flex:1;padding:8px 10px;border:2px dashed var(--acts);background:rgba(108,92,231,.07);color:var(--acts);border-radius:10px;font-family:'Instrument Sans',sans-serif;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px">🗺 Pick on map</button>
+      </div>
+      <div id="mapPickHint" style="display:none;font-size:11px;color:var(--acts);margin-top:4px;padding:6px 10px;background:rgba(108,92,231,.08);border-radius:8px;text-align:center">Tap anywhere on the map to set location · <button type="button" onclick="cancelMapPick()" style="background:none;border:none;color:var(--accent);font-weight:700;font-size:11px;cursor:pointer">Cancel</button></div>
     </div>
     <div class="f-grp">
       <label class="f-lbl">Description <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
@@ -909,6 +914,64 @@ async function loadFeedback() {
     feedbackItems = (rows || []).map(r => ({ id: r.id, type: r.type, msg: r.message, ts: new Date(r.created_at).getTime() }));
   } catch(e) {
     console.warn('[Spothan] loadFeedback failed:', e);
+  }
+}
+
+// ── VOTES TABLE — separate table for scalable vote storage ──
+// Supabase table: votes (place_id bigint, device_id text, dir text, ts bigint, PRIMARY KEY (place_id, device_id))
+// This replaces the votes[] array stored inside the places row.
+// Run in Supabase SQL editor:
+//   CREATE TABLE IF NOT EXISTS votes (
+//     place_id bigint NOT NULL,
+//     device_id text NOT NULL,
+//     dir text CHECK (dir IN ('up','dn')),
+//     ts bigint NOT NULL,
+//     PRIMARY KEY (place_id, device_id)
+//   );
+//   CREATE INDEX IF NOT EXISTS votes_place_id_idx ON votes(place_id);
+//   -- View for fast aggregation (used by loadVoteCounts):
+//   CREATE OR REPLACE VIEW vote_counts AS
+//     SELECT place_id,
+//       COUNT(*) FILTER (WHERE dir='up') AS up_count,
+//       COUNT(*) FILTER (WHERE dir='dn') AS dn_count
+//     FROM votes GROUP BY place_id;
+
+async function loadVoteCounts() {
+  try {
+    const rows = await sb.select('vote_counts', '');
+    if (!rows || !rows.length) return;
+    const map = {};
+    rows.forEach(r => { map[r.place_id] = { up: parseInt(r.up_count)||0, dn: parseInt(r.dn_count)||0 }; });
+    places.forEach(p => {
+      const vc = map[p.id];
+      if (!vc) return;
+      // Replace the votes array with lightweight synthetic entries from the DB counts
+      // This keeps wScore/rawCounts working without fat JSON arrays
+      const ts = now();
+      p.votes = [];
+      for (let i = 0; i < vc.up; i++) p.votes.push({ ts: ts - i * DAY, dir: 'up' });
+      for (let i = 0; i < vc.dn; i++) p.votes.push({ ts: ts - i * DAY, dir: 'dn' });
+    });
+  } catch(e) {
+    // votes table may not exist yet — fall back to votes array in places row (legacy)
+    console.warn('[Spothan] loadVoteCounts failed (votes table not set up yet):', e);
+  }
+}
+
+async function upsertVote(placeId, dir) {
+  // Write one row per device per place — no array bloat
+  try {
+    if (dir) {
+      await sb.upsert('votes', { place_id: placeId, device_id: DEVICE_ID, dir, ts: now() });
+    } else {
+      // dir=null means vote removed — delete the row
+      await fetch(`${SUPABASE_URL}/rest/v1/votes?place_id=eq.${placeId}&device_id=eq.${DEVICE_ID}`, {
+        method: 'DELETE',
+        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Prefer': 'return=minimal' }
+      });
+    }
+  } catch(e) {
+    console.warn('[Spothan] upsertVote failed:', e);
   }
 }
 
@@ -1338,6 +1401,7 @@ async function bootMap(center, zoom) {
   } else {
     document.getElementById('splashMsg').textContent = 'Loading places…';
     await Promise.all([loadPlaces(), loadPending(), loadFeedback()]);
+    await loadVoteCounts(); // overlay separate votes table counts onto places
     await seedOnce();
   }
 
@@ -1632,6 +1696,8 @@ castVote = function(id, dir) {
 
   saveVotes();
   renderActivityPanel();
+  // Write to dedicated votes table (scalable) + legacy RPC for backwards compat
+  upsertVote(id, userVotes[id] || null);
   sb.rpc('cast_vote', { p_place_id: id, p_dir: userVotes[id] || null, p_ts: actionTs, p_device: DEVICE_ID })
     .catch(e => console.warn('[Spothan] Vote sync failed:', e));
 
@@ -1646,6 +1712,64 @@ castVote = function(id, dir) {
   refreshMarker(p);
   markEngaged();
   showToast(prev === dir ? 'Vote removed' : (dir === 'up' ? '👍 Upvoted!' : '👎 Downvoted'));
+}
+
+// ── MAP PICK — tap map to set location ──
+let mapPickMode = false;
+let _mapPickHandler = null;
+let _mapPickSavedState = null; // store form values while modal is hidden
+
+function startMapPick() {
+  // Save current form state
+  _mapPickSavedState = {
+    name: document.getElementById('pName').value,
+    addr: document.getElementById('pAddr').value,
+    desc: document.getElementById('pDesc').value
+  };
+  // Fully close the modal overlay (no fade hack)
+  document.getElementById('overlay').classList.remove('on');
+  document.getElementById('emptyState').style.visibility = '';
+  document.getElementById('mapPickHint').style.display = 'block';
+  mapPickMode = true;
+  map.getContainer().style.cursor = 'crosshair';
+  _mapPickHandler = function(e) {
+    if (!mapPickMode) return;
+    const {lat, lng} = e.latlng;
+    pendingCoords = {lat, lng};
+    cancelMapPick();
+    // Reverse geocode, then reopen modal
+    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=en`)
+      .then(r => r.json())
+      .then(d => {
+        const addr = d.display_name ? d.display_name.split(',').slice(0,3).join(', ') : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        _reopenModalWithPick(addr);
+      })
+      .catch(() => _reopenModalWithPick(`${lat.toFixed(5)}, ${lng.toFixed(5)}`));
+  };
+  map.once('click', _mapPickHandler);
+}
+
+function _reopenModalWithPick(addr) {
+  document.getElementById('overlay').classList.add('on');
+  document.getElementById('emptyState').style.visibility = 'hidden';
+  document.getElementById('pickOnMapBtn').style.display = 'flex';
+  document.getElementById('mapPickHint').style.display = 'none';
+  // Restore saved form state + set picked address
+  if (_mapPickSavedState) {
+    document.getElementById('pName').value = _mapPickSavedState.name;
+    document.getElementById('pDesc').value = _mapPickSavedState.desc;
+    _mapPickSavedState = null;
+  }
+  document.getElementById('pAddr').value = addr;
+  showToast('📍 Location set from map');
+}
+
+function cancelMapPick() {
+  mapPickMode = false;
+  if (_mapPickHandler) { map.off('click', _mapPickHandler); _mapPickHandler = null; }
+  map.getContainer().style.cursor = '';
+  document.getElementById('mapPickHint').style.display = 'none';
+  document.getElementById('pickOnMapBtn').style.display = 'flex';
 }
 
 async function submitPlace() {
@@ -1774,7 +1898,7 @@ function bindUI() {
   document.getElementById('weatherPill').addEventListener('click',e=>{e.stopPropagation();const s=document.getElementById('forecastStrip');const o=s.classList.toggle('open');document.getElementById('weatherPill').classList.toggle('fc-open',o);});
   document.getElementById('locateBtn').addEventListener('click', locateMe);
   document.getElementById('fabBtn').addEventListener('click', openModal);
-  document.getElementById('feedbackBtn').addEventListener('click', openFeedbackModal);
+  // lbTopBtn wired via onclick attribute in HTML
   document.getElementById('backdrop').addEventListener('click',closeSheet);
   document.getElementById('overlay').addEventListener('click',e=>{if(e.target===document.getElementById('overlay'))closeModal();});
   document.getElementById('cancelBtn').addEventListener('click',closeModal);
@@ -1904,8 +2028,14 @@ function bindUI() {
   });
 }
 
-function openModal(){document.getElementById('overlay').classList.add('on');document.getElementById('emptyState').style.visibility='hidden';}
+function openModal(){
+  document.getElementById('overlay').classList.add('on');
+  document.getElementById('mapPickHint').style.display='none';
+  document.getElementById('pickOnMapBtn').style.display='flex';
+  document.getElementById('emptyState').style.visibility='hidden';
+}
 function closeModal(){
+  if (mapPickMode) cancelMapPick();
   document.getElementById('overlay').classList.remove('on');
   document.getElementById('emptyState').style.visibility='';
   ['pName','pAddr','pDesc','pStart','pEnd'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
@@ -4042,8 +4172,8 @@ markEngaged = function() {
     </div>
     <div class="about-section-label">This device</div>
     <div id="activityPanel"></div>
-    <div class="about-section-label">Leaderboard</div>
-    <button onclick="closeAboutPanel();openLeaderboard()" style="width:100%;padding:13px 16px;background:linear-gradient(135deg,#1a0a00,#3a1000);color:white;border:none;border-radius:14px;font-family:'Bricolage Grotesque',sans-serif;font-size:15px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:14px">🏆 Leaderboard</button>
+    <div class="about-section-label">Feedback</div>
+    <button onclick="closeAboutPanel();openFeedbackModal()" style="width:100%;padding:13px 16px;background:var(--warm);color:var(--ink);border:none;border-radius:14px;font-family:'Bricolage Grotesque',sans-serif;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:14px">💬 Send Feedback</button>
     <div class="about-section-label">App &amp; Notifications</div>
     <div id="aboutInstallSection"></div>
     <div id="aboutEmailSection"></div>
