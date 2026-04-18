@@ -877,14 +877,37 @@ let pendingPlaces = [];
 let feedbackItems = [];
 
 // ── LOAD PLACES FROM SUPABASE ──
+// For large userbases: Supabase needs a spatial index on (lat, lng).
+// Run in SQL editor:
+//   CREATE INDEX IF NOT EXISTS places_lat_lng_idx ON places(lat, lng);
+// loadPlaces() fetches all live places (fine up to ~5k rows).
+// loadPlacesInView() fetches only within a bounding box — use this when you hit scale.
 async function loadPlaces() {
   try {
-    const rows = await sb.select('places', 'status=eq.live&order=created_at.asc');
+    const rows = await sb.select('places', 'status=eq.live&order=created_at.asc&select=id,name,category,emoji,lat,lng,address,description,hours,limited_time,start_ts,end_ts,created_at,device_id');
     places = (rows || []).map(dbToPlace);
     syncApprovedSubmissions();
   } catch(e) {
     console.warn('[Spothan] loadPlaces failed, trying localStorage fallback:', e);
     try { const r = localStorage.getItem(STORAGE_KEY); if (r) places = JSON.parse(r); } catch(_) {}
+  }
+}
+
+// Viewport-bounded loader — call this instead of loadPlaces() once you have 5k+ places.
+// Requires PostGIS or just lat/lng range filter (below uses simple range, no PostGIS needed).
+async function loadPlacesInView(bounds) {
+  const { _southWest: sw, _northEast: ne } = bounds;
+  try {
+    const rows = await sb.select('places',
+      `status=eq.live&lat=gte.${sw.lat}&lat=lte.${ne.lat}&lng=gte.${sw.lng}&lng=lte.${ne.lng}` +
+      `&select=id,name,category,emoji,lat,lng,address,description,hours,limited_time,start_ts,end_ts,created_at,device_id`
+    );
+    const fresh = (rows || []).map(dbToPlace);
+    // Merge: add new, don't duplicate
+    fresh.forEach(p => { if (!places.find(x => x.id === p.id)) places.push(p); });
+    syncApprovedSubmissions();
+  } catch(e) {
+    console.warn('[Spothan] loadPlacesInView failed:', e);
   }
 }
 
@@ -989,7 +1012,7 @@ function dbToPlace(r) {
     desc:        r.description || '',
     hours:       r.hours || null,
     images:      r.images || [],
-    votes:       r.votes || [],
+    votes:       [],   // populated by loadVoteCounts() from votes table
     limitedTime: r.limited_time || false,
     start:       r.start_ts || null,
     end:         r.end_ts || null,
@@ -1010,7 +1033,6 @@ function placeToDb(p, status = 'pending') {
     description: p.desc || null,
     hours:       p.hours || null,
     images:      p.images || [],
-    votes:       p.votes || [],
     limited_time: p.limitedTime || false,
     start_ts:    p.start || null,
     end_ts:      p.end || null,
@@ -1791,7 +1813,7 @@ async function submitPlace() {
     lat: pendingCoords.lat, lng: pendingCoords.lng,
     address: document.getElementById('pAddr').value.trim() || 'Unknown location',
     desc, hours: readHours(), images: [],
-    votes: [{ ts: now(), dir: 'up' }],
+    votes: [],
     submittedAt: now()
   };
   if (isLimitedTime) {
@@ -1811,11 +1833,24 @@ async function submitPlace() {
     const supabaseReady = SUPABASE_URL !== 'YOUR_SUPABASE_URL';
     let saved;
     if (supabaseReady) {
-      const rows = await sb.insert('places', placeToDb(np, 'pending'));
-      saved = rows && rows[0] ? dbToPlace(rows[0]) : { ...np, id: now() };
+      // Retry up to 3 times on network hiccups
+      let rows, lastErr;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          rows = await sb.insert('places', placeToDb(np, 'pending'));
+          break;
+        } catch(e) {
+          lastErr = e;
+          if (attempt < 3) await new Promise(r => setTimeout(r, 800 * attempt));
+        }
+      }
+      if (!rows) throw lastErr;
+      saved = rows[0] ? dbToPlace(rows[0]) : { ...np, id: now() };
+      // Write submitter's automatic upvote to votes table
+      upsertVote(saved.id, 'up');
+      saved.votes = [{ ts: now(), dir: 'up' }]; // local only for immediate UI
     } else {
-      // Local-only fallback
-      saved = { ...np, id: now() };
+      saved = { ...np, id: now(), votes: [{ ts: now(), dir: 'up' }] };
       pendingPlaces.push(saved);
       try { localStorage.setItem(PENDING_KEY, JSON.stringify(pendingPlaces)); } catch(e) {}
     }
@@ -4001,11 +4036,19 @@ function renderLbList() {
 }
 
 async function syncLeaderboardStats() {
-  if (!myUsername) return; // don't sync anonymous users
-  const myPlaces  = places.filter(p => p.deviceId === DEVICE_ID);
-  const spots     = myPlaces.length;
-  const likes     = myPlaces.reduce((s, p) => s + rawCounts(p).up, 0);
+  if (!myUsername) return;
+  const myPlaces = places.filter(p => p.deviceId === DEVICE_ID);
+  const spots    = myPlaces.length;
   const voteCount = Object.keys(voteLocks).filter(k => /^\d+$/.test(k)).length;
+  // Get likes from votes table (accurate, doesn't depend on in-memory votes array)
+  let likes = 0;
+  try {
+    if (myPlaces.length > 0) {
+      const ids = myPlaces.map(p => p.id).join(',');
+      const rows = await sb.select('votes', `place_id=in.(${ids})&dir=eq.up`);
+      likes = rows ? rows.length : 0;
+    }
+  } catch(e) { /* use 0 */ }
   try {
     await sb.upsert('leaderboard', {
       device_id: DEVICE_ID,
