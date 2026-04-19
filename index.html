@@ -759,11 +759,10 @@ const PENDING_KEY = 'spothan_pending_v1';
 const VOTES_KEY = 'spothan_votes_v1';
 const VOTE_LOCK_KEY = 'spothan_vote_locks_v1';
 const SUBMIT_LOG_KEY = 'spothan_submits_v1';
-const REVIEW_PIN = '5703'; // change this to whatever you want
-const DATA_PIN   = '5703'; // can be different from REVIEW_PIN if you want
-const SEED_KEY = 'spothan_seeded_v1'; // tracks whether seed data has been loaded
-const APPROVED_KEY = 'spothan_approved_v1'; // names of approved places to notify submitter
+const SEED_KEY = 'spothan_seeded_v1';
+const APPROVED_KEY = 'spothan_approved_v1';
 const APPROVED_SUBMISSIONS_KEY = 'spothan_approved_submissions_v1';
+const ADMIN_TOKEN_KEY = 'spothan_admin_token'; // sessionStorage only — cleared on tab close
 const VOTE_COOLDOWN = 10 * 60 * 1000;
 const USERNAME_KEY = 'spothan_username_v1';
 const LEADERBOARD_SYNC_KEY = 'spothan_lb_sync_v1';
@@ -2487,8 +2486,13 @@ function initAdminGeocoder(inputEl, onSelect) {
   inputEl.addEventListener('focus', () => window.addEventListener('scroll', posBox, {passive:true, once:true}));
 }
 async function openDataPanel(){
-  const pin = prompt('🔐 Data PIN:');
-  if (pin !== DATA_PIN) { showToast('Wrong PIN'); history.replaceState(null,'',location.pathname); return; }
+  const hasToken = await checkAdminToken();
+  if (!hasToken) {
+    const pin = prompt('🔐 Admin PIN:');
+    if (!pin) { history.replaceState(null,'',location.pathname); return; }
+    const ok = await verifyAdminPin(pin);
+    if (!ok) { showToast('Wrong PIN'); history.replaceState(null,'',location.pathname); return; }
+  }
   showToast('Loading data…');
   await loadPlaces();
   document.getElementById('dataOutput').textContent = JSON.stringify(places, null, 2);
@@ -3328,9 +3332,49 @@ async function adminDeleteLive(id) {
 
 // ── REVIEW PANEL ──
 let rpActiveTab = 'pending';
+// ── ADMIN AUTH — PIN verified server-side, token stored in sessionStorage only ──
+async function verifyAdminPin(pin) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-admin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ pin })
+    });
+    const data = await res.json();
+    if (data.ok && data.token) {
+      sessionStorage.setItem(ADMIN_TOKEN_KEY, data.token);
+      return true;
+    }
+    return false;
+  } catch(e) {
+    console.warn('[Spothan] Admin verify failed:', e);
+    return false;
+  }
+}
+
+async function checkAdminToken() {
+  const token = sessionStorage.getItem(ADMIN_TOKEN_KEY);
+  if (!token) return false;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-admin-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ token })
+    });
+    const data = await res.json();
+    return data.ok === true;
+  } catch(e) { return false; }
+}
+
 async function openReviewPanel() {
-  const pin = prompt('🔐 Admin PIN:');
-  if (pin !== REVIEW_PIN) { showToast('Wrong PIN'); history.replaceState(null,'',location.pathname); return; }
+  // Reuse valid session token if present
+  const hasToken = await checkAdminToken();
+  if (!hasToken) {
+    const pin = prompt('🔐 Admin PIN:');
+    if (!pin) { history.replaceState(null,'',location.pathname); return; }
+    const ok = await verifyAdminPin(pin);
+    if (!ok) { showToast('Wrong PIN'); history.replaceState(null,'',location.pathname); return; }
+  }
   showToast('Loading submissions…');
   await loadAllPending();
   await loadFeedback();
@@ -3339,12 +3383,12 @@ async function openReviewPanel() {
   renderRpReports();
   renderRpFeedback();
   document.getElementById('reviewPanel').style.display = 'block';
-  // Enter admin mode
   enterAdminMode();
 }
 function closeReviewPanel() {
   document.getElementById('reviewPanel').style.display = 'none';
   exitAdminMode();
+  sessionStorage.removeItem(ADMIN_TOKEN_KEY);
   history.replaceState(null, '', location.pathname);
 }
 function switchRpTab(tab) {
