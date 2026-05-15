@@ -472,6 +472,62 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .email-submit:hover{opacity:.88;}
 .email-skip{width:100%;padding:10px;background:none;border:none;font-family:'Instrument Sans',sans-serif;font-size:13px;color:var(--muted);cursor:pointer;}
 .email-dontask{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;margin-top:6px;justify-content:center;}
+
+/* ── WELCOME POPUP ── */
+#welcomeOverlay{position:fixed;inset:0;z-index:99990;background:rgba(13,13,13,.62);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);display:flex;align-items:flex-end;justify-content:center;padding:0;opacity:0;pointer-events:none;transition:opacity .3s;}
+#welcomeOverlay.on{opacity:1;pointer-events:all;}
+#welcomeModal{background:var(--surface);border-radius:28px 28px 0 0;padding:32px 24px max(40px,calc(env(safe-area-inset-bottom,0px)+28px));width:100%;max-width:480px;transform:translateY(100%);transition:transform .38s cubic-bezier(.32,.72,0,1);max-height:82dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+#welcomeOverlay.on #welcomeModal{transform:translateY(0);}
+.welcome-header{text-align:center;margin-bottom:20px;padding-bottom:20px;border-bottom:1.5px solid var(--warm);}
+.welcome-emoji{font-size:46px;margin-bottom:12px;line-height:1;display:block;}
+.welcome-title{font-family:'Bricolage Grotesque',sans-serif;font-size:24px;font-weight:800;color:var(--ink);margin-bottom:0;line-height:1.2;}
+.welcome-body{font-size:15px;color:var(--ink2);line-height:1.75;margin-bottom:24px;white-space:pre-wrap;}
+.welcome-close{width:100%;padding:16px;background:var(--accent);color:white;border:none;border-radius:14px;font-family:'Bricolage Grotesque',sans-serif;font-size:16px;font-weight:800;cursor:pointer;letter-spacing:.3px;transition:opacity .2s;}
+.welcome-close:hover{opacity:.88;}
+
+/* ── POPULAR PIN HIGHLIGHT (top 10%) ── */
+/* The .map-pin is rotate(-45deg). The glow-wrap counter-rotates so circles stay round.
+   We position it at the visual centre of the teardrop (slightly up from pin anchor). */
+.hot-glow-wrap{
+  position:absolute;
+  /* pin is 38×38, visual emoji centre is roughly at (19,19) before rotate */
+  top:0;left:0;right:0;bottom:0;
+  display:flex;align-items:center;justify-content:center;
+  /* undo the pin's -45° so child elements render upright / circular */
+  transform:rotate(45deg);
+  pointer-events:none;
+  z-index:0;
+  overflow:visible;
+}
+/* Pulsing gold glow halo */
+.hot-glow-wrap::before{
+  content:'';
+  position:absolute;
+  width:56px;height:56px;
+  border-radius:50%;
+  background:radial-gradient(circle, rgba(255,210,0,.6) 0%, rgba(255,160,0,.25) 50%, transparent 72%);
+  animation:hotPulse 2s ease-in-out infinite;
+}
+/* Two radiating gold rings */
+.hot-ring{
+  position:absolute;
+  border-radius:50%;
+  border:2px solid rgba(255,200,0,.8);
+  width:50px;height:50px;
+  opacity:0;
+}
+.hot-ring-1{animation:hotRadiate 2.4s ease-out infinite;}
+.hot-ring-2{animation:hotRadiate 2.4s ease-out infinite 1.2s;}
+/* Gold score badge */
+.map-pin.pin-hot .pin-score{background:linear-gradient(135deg,#f5a623,#ffd700);color:#3a2000;border:1px solid rgba(255,180,0,.4);}
+@keyframes hotPulse{
+  0%,100%{opacity:.7;transform:scale(1);}
+  50%{opacity:1;transform:scale(1.15);}
+}
+@keyframes hotRadiate{
+  0%{transform:scale(0.5);opacity:.9;}
+  100%{transform:scale(2.2);opacity:0;}
+}
 </style>
 </head>
 <body>
@@ -708,11 +764,13 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
       <button class="rp-tab"        id="rpTabLive"     onclick="switchRpTab('live')">   📍 Live Places  <span class="rp-badge green" id="rpLiveBadge">0</span></button>
       <button class="rp-tab"        id="rpTabReports"  onclick="switchRpTab('reports')">⚑ Reports      <span class="rp-badge red"   id="rpReportsBadge">0</span></button>
       <button class="rp-tab"        id="rpTabFeedback" onclick="switchRpTab('feedback')">💬 Feedback    <span class="rp-badge blue"  id="rpFeedbackBadge">0</span></button>
+      <button class="rp-tab"        id="rpTabWelcome"  onclick="switchRpTab('welcome')">🎉 Welcome Popup</button>
     </div>
     <div id="rpPendingList"></div>
     <div id="rpLiveList"    style="display:none"></div>
     <div id="rpReportsList" style="display:none"></div>
     <div id="rpFeedbackList" style="display:none"></div>
+    <div id="rpWelcomeList" style="display:none"></div>
   </div>
 </div>
 
@@ -1385,6 +1443,7 @@ let map, clusterGroup, markers = {};
 let activeFilter='all', activeSort='none', selCatVal='food', selEmoji='🍽️';
 let savedPlaces=new Set();
 let userCenter = null; // set after geolocation resolves
+let hotPlaceIds = new Set(); // top 10% by eventScore — updated in applySort
 
 function dismissSplash() {
   const s = document.getElementById('splash');
@@ -1488,6 +1547,7 @@ async function bootMap(center, zoom) {
   map.once('load', dismissSplash);
   setTimeout(dismissSplash, 2200);
   setTimeout(() => window.dispatchEvent(new Event('spothan:ready')), 2400);
+  setTimeout(showWelcomeIfNeeded, 2600);
 }
 
 function initMap() {
@@ -1519,9 +1579,11 @@ function addMarker(p) {
   const scCls=sc>5?'pos':sc<0?'neg':'zero';
   const scLbl=sc>=0?`+${sc}`:`${sc}`;
   const urgent=isUrgent(p);
-  const pinCls=urgent?'pin-urgent':`pin-${p.cat}`;
+  const isHot=hotPlaceIds.has(p.id) && !urgent; // don't stack with urgent ring
+  const pinCls=urgent?'pin-urgent':`pin-${p.cat}${isHot?' pin-hot':''}`;
   const ring=urgent?'<div class="pin-urgent-ring"></div>':'';
-  const icon=L.divIcon({className:'',html:`<div class="map-pin ${pinCls}">${ring}<div class="map-pin-inner">${p.emoji}</div><div class="pin-score ${scCls}">${scLbl}</div></div>`,iconSize:[38,38],iconAnchor:[19,38],popupAnchor:[0,-44]});
+  const hotHtml=isHot?'<div class="hot-glow-wrap"><div class="hot-ring hot-ring-1"></div><div class="hot-ring hot-ring-2"></div></div>':'';
+  const icon=L.divIcon({className:'',html:`<div class="map-pin ${pinCls}">${hotHtml}${ring}<div class="map-pin-inner">${p.emoji}</div><div class="pin-score ${scCls}">${scLbl}</div></div>`,iconSize:[38,38],iconAnchor:[19,38],popupAnchor:[0,-44]});
   const dl=daysLeft(p);
   const eBadge=isLTPlace(p)?`<div class="cp-ebadge ${urgent?'urgent':'normal'}">${urgent?'🔴':'🟡'} ${dl===0?'Ends today':dl===1?'Ends tomorrow':`${dl} days left`}</div>`:'';
   const normalPopup = `<div class="cp"><div class="cp-top"><span class="cp-emoji">${esc(p.emoji)}</span><div><div class="cp-name">${esc(p.name)}</div></div></div><div class="cp-sub">📍 ${esc(p.address)}</div>${eBadge}<div class="cp-votes"><span class="cp-up">👍 ${raw.up}</span><div class="cp-bar"><div class="cp-fill" style="width:${pct}%"></div></div><span class="cp-dn">👎 ${raw.dn}</span></div><button class="cp-btn" onclick="openSheet(${p.id})">View Details →</button></div>`;
@@ -1545,6 +1607,19 @@ function applySort() {
   else if (activeSort==='top')      { list.sort((a,b)=>longevityScore(b)-longevityScore(a)); list=list.slice(0,Math.max(1,Math.ceil(list.length*.20))); }
   else if (activeSort==='ending')   { list=list.filter(p=>isLTPlace(p)); list.sort((a,b)=>daysLeft(a)-daysLeft(b)); }
   else if (activeSort==='saved')    list=list.filter(p=>savedPlaces.has(p.id));
+
+  // ── POPULAR HIGHLIGHT: compute top 10% by eventScore across ALL live places ──
+  const allLive = places.filter(p => !isExpired(p));
+  if (allLive.length > 0) {
+    const sorted = [...allLive].sort((a,b) => eventScore(b) - eventScore(a));
+    const cutoff = Math.max(1, Math.ceil(sorted.length * 0.10));
+    const topScores = sorted.slice(0, cutoff);
+    // Only mark as hot if the place has at least 1 upvote (avoid empty places)
+    hotPlaceIds = new Set(topScores.filter(p => rawCounts(p).up > 0).map(p => p.id));
+  } else {
+    hotPlaceIds = new Set();
+  }
+
   clusterGroup.clearLayers();
   Object.keys(markers).forEach(k=>delete markers[k]);
   // ── VIEWPORT CULLING: only render pins inside current map bounds (+ 20% padding) ──
@@ -3393,10 +3468,89 @@ function closeReviewPanel() {
 }
 function switchRpTab(tab) {
   rpActiveTab = tab;
-  ['pending','live','reports','feedback'].forEach(t => {
-    document.getElementById(`rpTab${t.charAt(0).toUpperCase()+t.slice(1)}`).classList.toggle('active', t === tab);
-    document.getElementById(`rp${t.charAt(0).toUpperCase()+t.slice(1)}List`).style.display = t === tab ? 'block' : 'none';
+  ['pending','live','reports','feedback','welcome'].forEach(t => {
+    const btn = document.getElementById(`rpTab${t.charAt(0).toUpperCase()+t.slice(1)}`);
+    const list = document.getElementById(`rp${t.charAt(0).toUpperCase()+t.slice(1)}List`);
+    if (btn) btn.classList.toggle('active', t === tab);
+    if (list) list.style.display = t === tab ? 'block' : 'none';
   });
+  if (tab === 'welcome') renderRpWelcome();
+}
+
+function renderRpWelcome() {
+  const el = document.getElementById('rpWelcomeList');
+  const cfg = getWelcomeConfig();
+  el.innerHTML = `
+    <div style="background:var(--bg);border-radius:14px;padding:18px;margin-bottom:12px;border:1.5px solid var(--warm)">
+      <div style="font-family:'Bricolage Grotesque',sans-serif;font-size:15px;font-weight:800;margin-bottom:4px">🎉 Welcome Popup</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Show a custom message to first-time visitors. They'll see it once, after the map loads.</div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border-radius:10px;padding:12px 14px;margin-bottom:14px;cursor:pointer" onclick="rpWelcomeToggle()">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:20px">👁️</span>
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--ink)">Show popup to new visitors</div>
+            <div style="font-size:11px;color:var(--muted)" id="rpWelcomeStatusLabel">${cfg.enabled ? '✅ Currently enabled' : '⭕ Currently disabled'}</div>
+          </div>
+        </div>
+        <div class="lt-switch${cfg.enabled?' on':''}" id="rpWelcomeSwitch" style="flex-shrink:0"><div class="lt-knob"></div></div>
+      </div>
+
+      <div style="margin-bottom:10px">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Emoji</div>
+        <input id="rpWelcomeEmoji" value="${esc(cfg.emoji||'👋')}" maxlength="4" style="width:60px;border:2px solid var(--warm);border-radius:8px;padding:7px 10px;font-size:20px;text-align:center;outline:none;background:var(--bg)" placeholder="👋">
+      </div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Title</div>
+        <input id="rpWelcomeTitle" value="${esc(cfg.title||'Welcome!')}" style="width:100%;border:2px solid var(--warm);border-radius:8px;padding:8px 11px;font-family:'Instrument Sans',sans-serif;font-size:14px;color:var(--ink);background:var(--bg);outline:none;box-sizing:border-box" placeholder="Welcome!">
+      </div>
+      <div style="margin-bottom:16px">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Message</div>
+        <textarea id="rpWelcomeBody" style="width:100%;border:2px solid var(--warm);border-radius:8px;padding:8px 11px;font-family:'Instrument Sans',sans-serif;font-size:13px;color:var(--ink);background:var(--bg);outline:none;box-sizing:border-box;resize:vertical;min-height:100px" placeholder="Write your welcome message here…">${esc(cfg.body||'')}</textarea>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="rpWelcomeSave()" style="flex:1;padding:10px;background:var(--ink);color:white;border:none;border-radius:10px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer">💾 Save</button>
+        <button onclick="rpWelcomePreview()" style="flex:1;padding:10px;background:var(--warm);color:var(--ink);border:none;border-radius:10px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer">👁 Preview</button>
+        <button onclick="rpWelcomeReset()" style="padding:10px 14px;background:var(--warm);color:var(--muted);border:none;border-radius:10px;font-size:12px;cursor:pointer" title="Reset all visitors — they'll see the popup again">🔄 Reset seen</button>
+      </div>
+    </div>`;
+}
+
+let _rpWelcomeEnabled = null;
+function rpWelcomeToggle() {
+  const cfg = getWelcomeConfig();
+  _rpWelcomeEnabled = !(_rpWelcomeEnabled ?? cfg.enabled);
+  const sw = document.getElementById('rpWelcomeSwitch');
+  const lbl = document.getElementById('rpWelcomeStatusLabel');
+  if (sw) sw.classList.toggle('on', _rpWelcomeEnabled);
+  if (lbl) lbl.textContent = _rpWelcomeEnabled ? '✅ Currently enabled' : '⭕ Currently disabled';
+}
+function rpWelcomeSave() {
+  const cfg = getWelcomeConfig();
+  const newCfg = {
+    enabled: _rpWelcomeEnabled ?? cfg.enabled,
+    emoji:   document.getElementById('rpWelcomeEmoji')?.value || '👋',
+    title:   document.getElementById('rpWelcomeTitle')?.value.trim() || 'Welcome!',
+    body:    document.getElementById('rpWelcomeBody')?.value || ''
+  };
+  saveWelcomeConfig(newCfg);
+  _rpWelcomeEnabled = null;
+  showToast('Welcome popup saved ✓');
+  renderRpWelcome();
+}
+function rpWelcomePreview() {
+  rpWelcomeSave();
+  // Force-show the popup for preview regardless of enabled state
+  const cfg = getWelcomeConfig();
+  const el = document.getElementById('welcomeOverlay');
+  document.getElementById('welcomeEmoji').textContent = cfg.emoji || '👋';
+  document.getElementById('welcomeTitle').textContent = cfg.title || 'Welcome!';
+  document.getElementById('welcomeBody').textContent  = cfg.body  || '';
+  el.classList.add('on');
+}
+function rpWelcomeReset() {
+  localStorage.removeItem(WELCOME_SEEN_KEY);
+  showToast('Done — all visitors will see the popup again');
 }
 
 function renderRpPending() {
@@ -3749,6 +3903,36 @@ function dismissOnboarding() {
   el.style.opacity = '0';
   el.style.transition = 'opacity .3s';
   setTimeout(() => el.style.display = 'none', 320);
+}
+
+// ── WELCOME POPUP ──
+const WELCOME_KEY         = 'spothan_welcome_v1';       // config: {enabled, emoji, title, body}
+const WELCOME_SEEN_KEY    = 'spothan_welcome_seen_v1';  // per-user: shown already?
+
+function getWelcomeConfig() {
+  try { return JSON.parse(localStorage.getItem(WELCOME_KEY) || 'null') || { enabled: false, emoji: '👋', title: 'Welcome to Spothan!', body: 'Discover the best local spots — added and rated by real people around you.\n\nTap any pin to explore, or hit ➕ to add your own hidden gem!' }; } catch(e) { return { enabled: false, emoji: '👋', title: 'Welcome to Spothan!', body: '' }; }
+}
+function saveWelcomeConfig(cfg) {
+  try { localStorage.setItem(WELCOME_KEY, JSON.stringify(cfg)); } catch(e) {}
+}
+
+function showWelcomeIfNeeded() {
+  const cfg = getWelcomeConfig();
+  if (!cfg.enabled) return;
+  if (localStorage.getItem(WELCOME_SEEN_KEY)) return;
+  setTimeout(() => {
+    const el = document.getElementById('welcomeOverlay');
+    document.getElementById('welcomeEmoji').textContent = cfg.emoji || '👋';
+    document.getElementById('welcomeTitle').textContent = cfg.title || 'Welcome!';
+    document.getElementById('welcomeBody').textContent  = cfg.body  || '';
+    el.classList.add('on');
+  }, 1600);
+}
+
+function dismissWelcome() {
+  localStorage.setItem(WELCOME_SEEN_KEY, '1');
+  const el = document.getElementById('welcomeOverlay');
+  el.classList.remove('on');
 }
 
 // ── INSTALL PROMPT (beforeinstallprompt) ──
@@ -4355,6 +4539,18 @@ markEngaged = function() {
     <button onclick="closeLb();openUsernameModal()" style="width:100%;padding:11px;background:var(--ink);color:white;border:none;border-radius:12px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;margin-top:12px">✏️ Change my username</button>
   </div>
 </div>
+<!-- ── WELCOME POPUP ── -->
+<div id="welcomeOverlay">
+  <div id="welcomeModal">
+    <div class="welcome-header">
+      <span class="welcome-emoji" id="welcomeEmoji">👋</span>
+      <div class="welcome-title" id="welcomeTitle">Welcome!</div>
+    </div>
+    <div class="welcome-body" id="welcomeBody"></div>
+    <button class="welcome-close" onclick="dismissWelcome()">Let's go →</button>
+  </div>
+</div>
+
 <!-- ── ADMIN EDIT PANEL (fixed overlay, replaces Leaflet popup in admin mode) ── -->
 <div id="adminEditPanel" style="display:none;position:fixed;top:0;right:0;bottom:0;width:320px;max-width:100vw;z-index:9100;background:var(--surface);box-shadow:-4px 0 24px rgba(0,0,0,.18);overflow-y:auto;padding:16px 16px 40px;">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;position:sticky;top:0;background:var(--surface);padding-bottom:10px;border-bottom:1px solid var(--warm);">
