@@ -474,14 +474,15 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .email-dontask{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;margin-top:6px;justify-content:center;}
 
 /* ── WELCOME POPUP ── */
-#welcomeOverlay{position:fixed;inset:0;z-index:99990;background:rgba(13,13,13,.62);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);display:flex;align-items:flex-end;justify-content:center;padding:0;opacity:0;pointer-events:none;transition:opacity .3s;}
+#welcomeOverlay{position:fixed;inset:0;z-index:99990;background:rgba(13,13,13,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:24px;opacity:0;pointer-events:none;transition:opacity .35s;}
 #welcomeOverlay.on{opacity:1;pointer-events:all;}
-#welcomeModal{background:var(--surface);border-radius:28px 28px 0 0;padding:32px 24px max(40px,calc(env(safe-area-inset-bottom,0px)+28px));width:100%;max-width:480px;transform:translateY(100%);transition:transform .38s cubic-bezier(.32,.72,0,1);max-height:82dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
-#welcomeOverlay.on #welcomeModal{transform:translateY(0);}
-.welcome-header{text-align:center;margin-bottom:20px;padding-bottom:20px;border-bottom:1.5px solid var(--warm);}
-.welcome-emoji{font-size:46px;margin-bottom:12px;line-height:1;display:block;}
-.welcome-title{font-family:'Bricolage Grotesque',sans-serif;font-size:24px;font-weight:800;color:var(--ink);margin-bottom:0;line-height:1.2;}
-.welcome-body{font-size:15px;color:var(--ink2);line-height:1.75;margin-bottom:24px;white-space:pre-wrap;}
+#welcomeModal{background:var(--surface);border-radius:28px;padding:0;width:100%;max-width:400px;transform:scale(.92) translateY(16px);transition:transform .42s cubic-bezier(.32,.72,0,1);max-height:88dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;box-shadow:0 24px 64px rgba(13,13,13,.28);}
+#welcomeOverlay.on #welcomeModal{transform:scale(1) translateY(0);}
+.welcome-hero{text-align:center;padding:40px 32px 28px;border-bottom:1.5px solid var(--warm);}
+.welcome-emoji{font-size:56px;line-height:1;display:block;margin-bottom:18px;}
+.welcome-title{font-family:'Bricolage Grotesque',sans-serif;font-size:26px;font-weight:800;color:var(--ink);line-height:1.2;letter-spacing:-.4px;}
+.welcome-body{font-size:15px;color:var(--ink2);line-height:1.8;padding:26px 32px;white-space:pre-wrap;border-bottom:1.5px solid var(--warm);}
+.welcome-footer{padding:20px 24px;}
 .welcome-close{width:100%;padding:16px;background:var(--accent);color:white;border:none;border-radius:14px;font-family:'Bricolage Grotesque',sans-serif;font-size:16px;font-weight:800;cursor:pointer;letter-spacing:.3px;transition:opacity .2s;}
 .welcome-close:hover{opacity:.88;}
 
@@ -927,6 +928,16 @@ function getDeviceId() {
   return id;
 }
 const DEVICE_ID = getDeviceId();
+
+// ── WELCOME POPUP CONFIG ──
+const WELCOME_KEY      = 'spothan_welcome_v1';       // {enabled, emoji, title, body}
+const WELCOME_SEEN_KEY = 'spothan_welcome_seen_v1';  // set once per device after dismissal
+function getWelcomeConfig() {
+  try { return JSON.parse(localStorage.getItem(WELCOME_KEY) || 'null') || { enabled: false, emoji: '👋', title: 'Welcome to Spothan!', body: 'Discover the best local spots — added and rated by real people around you.\n\nTap any pin to explore, or hit ➕ to add your own hidden gem!' }; } catch(e) { return { enabled: false, emoji: '👋', title: 'Welcome to Spothan!', body: '' }; }
+}
+function saveWelcomeConfig(cfg) {
+  try { localStorage.setItem(WELCOME_KEY, JSON.stringify(cfg)); } catch(e) {}
+}
 
 // ── IN-MEMORY STORES — populated from Supabase on load ──
 let places = [];
@@ -3498,15 +3509,15 @@ function renderRpWelcome() {
 
       <div style="margin-bottom:10px">
         <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Emoji</div>
-        <input id="rpWelcomeEmoji" value="${esc(cfg.emoji||'👋')}" maxlength="4" style="width:60px;border:2px solid var(--warm);border-radius:8px;padding:7px 10px;font-size:20px;text-align:center;outline:none;background:var(--bg)" placeholder="👋">
+        <input id="rpWelcomeEmoji" maxlength="4" style="width:60px;border:2px solid var(--warm);border-radius:8px;padding:7px 10px;font-size:20px;text-align:center;outline:none;background:var(--bg)" placeholder="👋">
       </div>
       <div style="margin-bottom:10px">
         <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Title</div>
-        <input id="rpWelcomeTitle" value="${esc(cfg.title||'Welcome!')}" style="width:100%;border:2px solid var(--warm);border-radius:8px;padding:8px 11px;font-family:'Instrument Sans',sans-serif;font-size:14px;color:var(--ink);background:var(--bg);outline:none;box-sizing:border-box" placeholder="Welcome!">
+        <input id="rpWelcomeTitle" style="width:100%;border:2px solid var(--warm);border-radius:8px;padding:8px 11px;font-family:'Instrument Sans',sans-serif;font-size:14px;color:var(--ink);background:var(--bg);outline:none;box-sizing:border-box" placeholder="Welcome!">
       </div>
       <div style="margin-bottom:16px">
         <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Message</div>
-        <textarea id="rpWelcomeBody" style="width:100%;border:2px solid var(--warm);border-radius:8px;padding:8px 11px;font-family:'Instrument Sans',sans-serif;font-size:13px;color:var(--ink);background:var(--bg);outline:none;box-sizing:border-box;resize:vertical;min-height:100px" placeholder="Write your welcome message here…">${esc(cfg.body||'')}</textarea>
+        <textarea id="rpWelcomeBody" style="width:100%;border:2px solid var(--warm);border-radius:8px;padding:8px 11px;font-family:'Instrument Sans',sans-serif;font-size:13px;color:var(--ink);background:var(--bg);outline:none;box-sizing:border-box;resize:vertical;min-height:100px" placeholder="Write your welcome message here…"></textarea>
       </div>
       <div style="display:flex;gap:8px">
         <button onclick="rpWelcomeSave()" style="flex:1;padding:10px;background:var(--ink);color:white;border:none;border-radius:10px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer">💾 Save</button>
@@ -3514,7 +3525,13 @@ function renderRpWelcome() {
         <button onclick="rpWelcomeReset()" style="padding:10px 14px;background:var(--warm);color:var(--muted);border:none;border-radius:10px;font-size:12px;cursor:pointer" title="Reset all visitors — they'll see the popup again">🔄 Reset seen</button>
       </div>
     </div>`;
+  // Set values via JS to avoid HTML-encoding issues with emojis and special characters
+  document.getElementById('rpWelcomeEmoji').value = cfg.emoji || '👋';
+  document.getElementById('rpWelcomeTitle').value = cfg.title || 'Welcome to Spothan!';
+  document.getElementById('rpWelcomeBody').value  = cfg.body  || '';
+  _rpWelcomeEnabled = null; // reset pending toggle state on re-render
 }
+
 
 let _rpWelcomeEnabled = null;
 function rpWelcomeToggle() {
@@ -3903,17 +3920,6 @@ function dismissOnboarding() {
   el.style.opacity = '0';
   el.style.transition = 'opacity .3s';
   setTimeout(() => el.style.display = 'none', 320);
-}
-
-// ── WELCOME POPUP ──
-const WELCOME_KEY         = 'spothan_welcome_v1';       // config: {enabled, emoji, title, body}
-const WELCOME_SEEN_KEY    = 'spothan_welcome_seen_v1';  // per-user: shown already?
-
-function getWelcomeConfig() {
-  try { return JSON.parse(localStorage.getItem(WELCOME_KEY) || 'null') || { enabled: false, emoji: '👋', title: 'Welcome to Spothan!', body: 'Discover the best local spots — added and rated by real people around you.\n\nTap any pin to explore, or hit ➕ to add your own hidden gem!' }; } catch(e) { return { enabled: false, emoji: '👋', title: 'Welcome to Spothan!', body: '' }; }
-}
-function saveWelcomeConfig(cfg) {
-  try { localStorage.setItem(WELCOME_KEY, JSON.stringify(cfg)); } catch(e) {}
 }
 
 function showWelcomeIfNeeded() {
@@ -4542,12 +4548,14 @@ markEngaged = function() {
 <!-- ── WELCOME POPUP ── -->
 <div id="welcomeOverlay">
   <div id="welcomeModal">
-    <div class="welcome-header">
+    <div class="welcome-hero">
       <span class="welcome-emoji" id="welcomeEmoji">👋</span>
       <div class="welcome-title" id="welcomeTitle">Welcome!</div>
     </div>
     <div class="welcome-body" id="welcomeBody"></div>
-    <button class="welcome-close" onclick="dismissWelcome()">Let's go →</button>
+    <div class="welcome-footer">
+      <button class="welcome-close" onclick="dismissWelcome()">Let's go →</button>
+    </div>
   </div>
 </div>
 
