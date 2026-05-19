@@ -1,1 +1,8 @@
-
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.spothan.twa",
+        "sha256_cert_fingerprints": ["98:E7:55:19:BF:15:04:A3:6E:35:51:3A:24:3B:3D:7C:7B:4E:22:E7:7A:9E:AA:C1:5F:FD:14:D4:5A:67:BF:CC"]
+      }
+    }]
