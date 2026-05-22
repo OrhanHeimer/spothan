@@ -3,6 +3,9 @@
       "target": {
         "namespace": "android_app",
         "package_name": "com.spothan.twa",
-        "sha256_cert_fingerprints": ["98:E7:55:19:BF:15:04:A3:6E:35:51:3A:24:3B:3D:7C:7B:4E:22:E7:7A:9E:AA:C1:5F:FD:14:D4:5A:67:BF:CC"]
+        "sha256_cert_fingerprints": [
+              "98:E7:55:19:BF:15:04:A3:6E:35:51:3A:24:3B:3D:7C:7B:4E:22:E7:7A:9E:AA:C1:5F:FD:14:D4:5A:67:BF:CC",
+              "E2:B8:69:75:ED:3F:CD:A9:21:19:56:FA:79:C1:62:C4:9F:F5:58:FD:DF:33:5D:A0:17:CC:79:0D:19:1F:E4:96"
+        ]
       }
     }]
