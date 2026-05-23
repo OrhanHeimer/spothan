@@ -528,6 +528,7 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 }
 .hot-ring-1{animation:hotRadiate 2.4s ease-out infinite;}
 .hot-ring-2{animation:hotRadiate 2.4s ease-out infinite 1.2s;}
+@keyframes clusterHotPulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.18);opacity:1}}
 /* Gold score badge */
 .map-pin.pin-hot .pin-score{background:linear-gradient(135deg,#f5a623,#ffd700);color:#3a2000;border:1px solid rgba(255,180,0,.4);}
 @keyframes hotPulse{
@@ -1508,10 +1509,35 @@ async function bootMap(center, zoom) {
   map = L.map('map', {center, zoom, zoomControl:false});
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OpenStreetMap'}).addTo(map);
   L.control.zoom({position:'bottomleft'}).addTo(map);
+  // ── CLUSTER SENSITIVITY DIAL ──────────────────────────────────────────────
+  // maxClusterRadius: pixels within which markers merge into a cluster.
+  //   Lower  = less clustering, more individual pins visible (try 30–50)
+  //   Higher = more aggressive clustering, cleaner map at cost of detail (try 80–120)
+  //   Default: 60
+  const CLUSTER_RADIUS = 60;
+  // disableClusteringAtZoom: zoom level at which ALL pins always show individually.
+  //   17 = street level. Lower to keep clustering longer (e.g. 15). Remove to never uncluster.
+  const UNCLUSTER_ZOOM = 17;
+  // ─────────────────────────────────────────────────────────────────────────
   clusterGroup = L.markerClusterGroup({
-    showCoverageOnHover:false, maxClusterRadius:60, spiderfyOnMaxZoom:true,
+    showCoverageOnHover:false,
+    maxClusterRadius: CLUSTER_RADIUS,
+    disableClusteringAtZoom: UNCLUSTER_ZOOM,
+    spiderfyOnMaxZoom:true,
     iconCreateFunction: c => {
       const n = c.getChildCount();
+      // Check if any child marker belongs to a hot place
+      const hasHot = c.getAllChildMarkers().some(m => m.options._spothanId && hotPlaceIds.has(m.options._spothanId));
+      if (hasHot) {
+        // Glowing accent ring for clusters containing a highlighted place
+        return L.divIcon({
+          html: `<div style="position:relative;width:46px;height:46px">
+            <div style="position:absolute;inset:-4px;border-radius:50%;background:rgba(255,60,0,.22);animation:clusterHotPulse 1.8s ease-in-out infinite"></div>
+            <div style="position:absolute;inset:0;border-radius:50%;background:#0d0d0d;color:#ff3c00;display:flex;align-items:center;justify-content:center;font-family:sans-serif;font-weight:800;font-size:14px;box-shadow:0 3px 14px rgba(255,60,0,.45);border:2.5px solid #ff3c00">${n}</div>
+          </div>`,
+          className:'', iconSize:[46,46], iconAnchor:[23,23]
+        });
+      }
       return L.divIcon({html:`<div style="width:38px;height:38px;border-radius:50%;background:#0d0d0d;color:#ff3c00;display:flex;align-items:center;justify-content:center;font-family:sans-serif;font-weight:800;font-size:14px;box-shadow:0 3px 12px rgba(0,0,0,.25);border:2.5px solid white">${n}</div>`,className:'',iconSize:[38,38],iconAnchor:[19,19]});
     }
   });
@@ -1607,7 +1633,7 @@ function addMarker(p) {
   const dl=daysLeft(p);
   const eBadge=isLTPlace(p)?`<div class="cp-ebadge ${urgent?'urgent':'normal'}">${urgent?'🔴':'🟡'} ${dl===0?'Ends today':dl===1?'Ends tomorrow':`${dl} days left`}</div>`:'';
   const normalPopup = `<div class="cp"><div class="cp-top"><span class="cp-emoji">${esc(p.emoji)}</span><div><div class="cp-name">${esc(p.name)}</div></div></div><div class="cp-sub">📍 ${esc(p.address)}</div>${eBadge}<div class="cp-votes"><span class="cp-up">👍 ${raw.up}</span><div class="cp-bar"><div class="cp-fill" style="width:${pct}%"></div></div><span class="cp-dn">👎 ${raw.dn}</span></div><button class="cp-btn" onclick="openSheet(${p.id})">View Details →</button></div>`;
-  const m=L.marker([p.lat,p.lng],{icon});
+  const m=L.marker([p.lat,p.lng],{icon, _spothanId: p.id});
   m.bindPopup(L.popup({closeButton:false,maxWidth:300}).setContent(normalPopup));
   m.on('click', () => {
     if (adminMode) { openAdminPanel(p); return; }
