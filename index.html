@@ -436,7 +436,7 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .user-dot{width:16px;height:16px;border-radius:50%;background:#4d9fff;border:3px solid white;box-shadow:0 0 0 4px rgba(77,159,255,.25),0 2px 8px rgba(0,0,0,.2);}
 .user-dot-pulse{width:40px;height:40px;border-radius:50%;background:rgba(77,159,255,.15);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);animation:userPulse 2s ease-out infinite;}
 @keyframes userPulse{0%{transform:translate(-50%,-50%) scale(0.5);opacity:1}100%{transform:translate(-50%,-50%) scale(1.8);opacity:0}}
-.toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--ink);color:white;padding:8px 18px;border-radius:50px;font-size:13px;font-weight:600;z-index:999;opacity:0;transition:all .25s;white-space:nowrap;pointer-events:none;box-shadow:var(--sh);}
+.toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--ink);color:white;padding:8px 18px;border-radius:50px;font-size:13px;font-weight:600;z-index:999999;opacity:0;transition:all .25s;white-space:nowrap;pointer-events:none;box-shadow:var(--sh);}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
 /* ── APPROVED BANNER ── */
 .approved-banner{position:fixed;top:0;left:0;right:0;z-index:9000;background:var(--green);color:white;padding:14px 18px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 20px rgba(0,195,122,.35);transform:translateY(-100%);transition:transform .4s cubic-bezier(.32,.72,0,1);}
@@ -486,7 +486,16 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .welcome-close{width:100%;padding:16px;background:var(--accent);color:white;border:none;border-radius:14px;font-family:'Bricolage Grotesque',sans-serif;font-size:16px;font-weight:800;cursor:pointer;letter-spacing:.3px;transition:opacity .2s;}
 .welcome-close:hover{opacity:.88;}
 
-/* ── POPULAR PIN HIGHLIGHT (top 10%) ── */
+/* ── GLOBAL CONFIRM POPUP ── */
+#confirmPopup{position:fixed;inset:0;z-index:999998;background:rgba(13,13,13,.55);display:flex;align-items:center;justify-content:center;padding:24px;opacity:0;pointer-events:none;transition:opacity .2s;}
+#confirmPopup.on{opacity:1;pointer-events:all;}
+#confirmPopupBox{background:var(--surface);border-radius:20px;padding:24px 22px;width:100%;max-width:340px;box-shadow:0 16px 48px rgba(13,13,13,.28);transform:scale(.94);transition:transform .22s cubic-bezier(.32,.72,0,1);}
+#confirmPopup.on #confirmPopupBox{transform:scale(1);}
+#confirmPopupMsg{font-size:14px;color:var(--ink2);line-height:1.6;margin-bottom:18px;}
+#confirmPopupTitle{font-family:'Bricolage Grotesque',sans-serif;font-size:16px;font-weight:800;color:var(--ink);margin-bottom:8px;}
+.confirm-popup-btns{display:flex;gap:8px;}
+.confirm-popup-ok{flex:1;padding:11px;background:var(--accent);color:white;border:none;border-radius:11px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:14px;cursor:pointer;}
+.confirm-popup-cancel{flex:1;padding:11px;background:var(--warm);color:var(--ink2);border:none;border-radius:11px;font-family:'Instrument Sans',sans-serif;font-weight:700;font-size:14px;cursor:pointer;}
 /* The .map-pin is rotate(-45deg). The glow-wrap counter-rotates so circles stay round.
    We position it at the visual centre of the teardrop (slightly up from pin anchor). */
 .hot-glow-wrap{
@@ -604,7 +613,7 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
   <div class="ei">📍</div>
   <h2>No places yet</h2>
   <p>Tap <strong style="color:var(--accent)">+</strong> to add the first spot in your area</p>
-  <button onclick="document.getElementById('emptyState').style.display='none'" style="margin-top:12px;padding:6px 18px;background:var(--warm);border:none;border-radius:50px;font-family:'Instrument Sans',sans-serif;font-size:12px;font-weight:600;color:var(--ink2);cursor:pointer">Close ✕</button>
+  <button onclick="(function(){document.getElementById('emptyState').style.display='none';window._emptyStateCooldownUntil=Date.now()+50000;})()" style="margin-top:12px;padding:6px 18px;background:var(--warm);border:none;border-radius:50px;font-family:'Instrument Sans',sans-serif;font-size:12px;font-weight:600;color:var(--ink2);cursor:pointer">Close ✕</button>
 </div>
 
 <button class="fab" id="fabBtn">+</button>
@@ -1642,8 +1651,12 @@ function applySort() {
   updateCount(list.length); // count shows total matching, not just visible
   // Location-aware empty state — suppressed in admin mode
   const empty = document.getElementById('emptyState');
+  const _esCooldown = window._emptyStateCooldownUntil || 0;
+  const _esCoolingDown = Date.now() < _esCooldown;
   if (adminMode) {
     empty.style.display = 'none';
+  } else if (_esCoolingDown) {
+    // cooldown active — don't re-show
   } else if (places.length === 0) {
     empty.style.display = 'block';
   } else if (visible.length === 0 && list.length > 0) {
@@ -3395,8 +3408,7 @@ async function adminSaveLive(id) {
       lat, lng,
       limited_time: useLT || false,
       start_ts: startTs, end_ts: endTs,
-      hours: hours ? JSON.stringify(hours) : null,
-      votes: newVotes
+      hours: hours ? JSON.stringify(hours) : null
     };
     await sb.update('places', id, dbPayload);
     p.name = name; p.emoji = emoji; p.address = addr; p.desc = desc; p.cat = cat;
@@ -3406,9 +3418,9 @@ async function adminSaveLive(id) {
     p.votes = newVotes;
     map.closePopup();
     refreshMarker(p);
-    renderRpLive();
+    if (document.getElementById('rpLiveList')) renderRpLive();
     showToast(`"${p.name}" updated ✓`);
-  } catch(e) { showToast('Could not save — check connection'); }
+  } catch(e) { console.error('[Spothan] adminSaveLive error:', e); showToast('Could not save — check connection (' + (e.message||e) + ')'); }
 }
 
 async function adminDeleteLive(id) {
@@ -3565,9 +3577,26 @@ function rpWelcomePreview() {
   document.getElementById('welcomeBody').textContent  = cfg.body  || '';
   el.classList.add('on');
 }
+function showConfirm(title, msg, okLabel, onOk) {
+  const pop = document.getElementById('confirmPopup');
+  document.getElementById('confirmPopupTitle').textContent = title;
+  document.getElementById('confirmPopupMsg').textContent = msg;
+  document.getElementById('confirmPopupOk').textContent = okLabel || 'Confirm';
+  pop.classList.add('on');
+  const okBtn = document.getElementById('confirmPopupOk');
+  const cancelBtn = document.getElementById('confirmPopupCancel');
+  function close() { pop.classList.remove('on'); okBtn.onclick = null; cancelBtn.onclick = null; }
+  okBtn.onclick = () => { close(); onOk(); };
+  cancelBtn.onclick = close;
+  pop.onclick = e => { if (e.target === pop) close(); };
+}
+
 function rpWelcomeReset() {
-  localStorage.removeItem(WELCOME_SEEN_KEY);
-  showToast('Done — all visitors will see the popup again');
+  showConfirm('Reset Seen Flag', 'All visitors will see the welcome popup again next visit.', 'Reset', () => {
+    localStorage.removeItem(WELCOME_SEEN_KEY);
+    localStorage.removeItem(WELCOME_SEEN_KEY + '_pwa');
+    showToast('Done — all visitors will see the popup again');
+  });
 }
 
 function renderRpPending() {
@@ -3925,7 +3954,10 @@ function dismissOnboarding() {
 function showWelcomeIfNeeded() {
   const cfg = getWelcomeConfig();
   if (!cfg.enabled) return;
-  if (localStorage.getItem(WELCOME_SEEN_KEY)) return;
+  // Use separate seen-key for standalone PWA vs browser so install doesn't suppress it
+  const standaloneMode = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  const seenKey = standaloneMode ? WELCOME_SEEN_KEY + '_pwa' : WELCOME_SEEN_KEY;
+  if (localStorage.getItem(seenKey)) return;
   setTimeout(() => {
     const el = document.getElementById('welcomeOverlay');
     document.getElementById('welcomeEmoji').textContent = cfg.emoji || '👋';
@@ -3936,7 +3968,9 @@ function showWelcomeIfNeeded() {
 }
 
 function dismissWelcome() {
-  localStorage.setItem(WELCOME_SEEN_KEY, '1');
+  const standaloneMode = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  const seenKey = standaloneMode ? WELCOME_SEEN_KEY + '_pwa' : WELCOME_SEEN_KEY;
+  localStorage.setItem(seenKey, '1');
   const el = document.getElementById('welcomeOverlay');
   el.classList.remove('on');
 }
@@ -4567,5 +4601,15 @@ markEngaged = function() {
   </div>
   <div id="adminEditContent"></div>
 </div>
+<!-- ── GLOBAL CONFIRM POPUP ── -->
+<div id="confirmPopup">
+  <div id="confirmPopupBox">
+    <div id="confirmPopupTitle"></div>
+    <div id="confirmPopupMsg"></div>
+    <div class="confirm-popup-btns">
+      <button class="confirm-popup-ok" id="confirmPopupOk">Confirm</button>
+      <button class="confirm-popup-cancel" id="confirmPopupCancel">Cancel</button>
+    </div>
+  </div>
+</div>
 </body>
-</html>
