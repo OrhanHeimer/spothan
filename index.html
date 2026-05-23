@@ -1647,7 +1647,11 @@ function applySort() {
   const visible = (map && map.getBounds)
     ? list.filter(p => map.getBounds().pad(0.2).contains([p.lat, p.lng]))
     : list;
-  visible.forEach((p,i) => setTimeout(() => addMarker(p), i * 15));
+  // Use a generation counter so stale async addMarker calls from a previous
+  // applySort (still pending in setTimeout queue) are discarded — prevents
+  // duplicate markers that inflate cluster counts
+  const gen = ++applySort._gen;
+  visible.forEach((p,i) => setTimeout(() => { if (applySort._gen === gen) addMarker(p); }, i * 15));
   updateCount(list.length); // count shows total matching, not just visible
   // Location-aware empty state — suppressed in admin mode
   const empty = document.getElementById('emptyState');
@@ -1675,6 +1679,7 @@ function applySort() {
 }
 
 function updateCount(n) { document.getElementById('countText').textContent=`${n} place${n!==1?'s':''}`; }
+applySort._gen = 0;
 
 function openSheet(id) {
   const p=places.find(x=>x.id===id); if(!p) return;
@@ -2906,8 +2911,10 @@ function rebuildMarkersForAdmin() {
   // Rebuild all live markers so click handlers respect adminMode
   clusterGroup.clearLayers();
   Object.keys(markers).forEach(k => delete markers[k]);
+  ++applySort._gen; // cancel any pending staggered addMarker calls
   const list = places.filter(p => !isExpired(p) && (activeFilter==='all' || p.cat===activeFilter));
-  list.forEach((p,i) => setTimeout(() => addMarker(p), i * 15));
+  const gen = applySort._gen;
+  list.forEach((p,i) => setTimeout(() => { if (applySort._gen === gen) addMarker(p); }, i * 15));
 }
 
 function toggleReviewMapMode() {
@@ -3951,28 +3958,38 @@ function dismissOnboarding() {
   setTimeout(() => el.style.display = 'none', 320);
 }
 
+function _isPWA() {
+  // Reliable cross-platform PWA detection
+  // navigator.standalone = iOS Safari PWA
+  // display-mode standalone/fullscreen/minimal-ui = Android PWA / TWA
+  if (window.navigator.standalone === true) return true;
+  try {
+    for (const dm of ['standalone','fullscreen','minimal-ui']) {
+      if (window.matchMedia(`(display-mode: ${dm})`).matches) return true;
+    }
+  } catch(e) {}
+  // TWA (Play Store): referrer is android-app://
+  if (document.referrer && document.referrer.startsWith('android-app://')) return true;
+  return false;
+}
+
 function showWelcomeIfNeeded() {
   const cfg = getWelcomeConfig();
   if (!cfg.enabled) return;
-  // Use separate seen-key for standalone PWA vs browser so install doesn't suppress it
-  const standaloneMode = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-  const seenKey = standaloneMode ? WELCOME_SEEN_KEY + '_pwa' : WELCOME_SEEN_KEY;
+  // Separate seen-keys: browser vs PWA so installing doesn't suppress the popup
+  const seenKey = _isPWA() ? WELCOME_SEEN_KEY + '_pwa' : WELCOME_SEEN_KEY;
   if (localStorage.getItem(seenKey)) return;
-  setTimeout(() => {
-    const el = document.getElementById('welcomeOverlay');
-    document.getElementById('welcomeEmoji').textContent = cfg.emoji || '👋';
-    document.getElementById('welcomeTitle').textContent = cfg.title || 'Welcome!';
-    document.getElementById('welcomeBody').textContent  = cfg.body  || '';
-    el.classList.add('on');
-  }, 1600);
+  const el = document.getElementById('welcomeOverlay');
+  document.getElementById('welcomeEmoji').textContent = cfg.emoji || '👋';
+  document.getElementById('welcomeTitle').textContent = cfg.title || 'Welcome!';
+  document.getElementById('welcomeBody').textContent  = cfg.body  || '';
+  el.classList.add('on');
 }
 
 function dismissWelcome() {
-  const standaloneMode = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-  const seenKey = standaloneMode ? WELCOME_SEEN_KEY + '_pwa' : WELCOME_SEEN_KEY;
+  const seenKey = _isPWA() ? WELCOME_SEEN_KEY + '_pwa' : WELCOME_SEEN_KEY;
   localStorage.setItem(seenKey, '1');
-  const el = document.getElementById('welcomeOverlay');
-  el.classList.remove('on');
+  document.getElementById('welcomeOverlay').classList.remove('on');
 }
 
 // ── INSTALL PROMPT (beforeinstallprompt) ──
