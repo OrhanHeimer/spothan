@@ -2854,6 +2854,11 @@ function initFeedback() {
     // Write to Supabase in background
     sb.insert('feedback', { type: selFbType, message: msg, device_id: DEVICE_ID })
       .catch(e => console.warn('[Spothan] Feedback save failed:', e));
+    fetch(`${SUPABASE_URL}/functions/v1/send-feedback-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ type: selFbType, message: msg })
+    }).catch(e => console.warn('[Spothan] Email notification failed:', e));
     closeFeedbackModal();
     showToast('Thanks! Feedback received 🙌');
   });
