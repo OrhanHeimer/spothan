@@ -115,7 +115,7 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:livePulse 1.8s ease-in-out infinite;}
 @keyframes livePulse{0%{box-shadow:0 0 0 0 rgba(0,195,122,.5);}70%{box-shadow:0 0 0 7px rgba(0,195,122,0);}100%{box-shadow:0 0 0 0 rgba(0,195,122,0);}}
 .live-n{font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:15px;color:var(--green);}
-.filter-row{display:flex;flex-wrap:wrap;gap:7px;overflow:visible;scrollbar-width:none;pointer-events:all;align-items:center;padding:4px 0 8px;}
+.filter-row{display:flex;flex-wrap:nowrap;gap:7px;overflow-x:auto;scrollbar-width:none;pointer-events:all;align-items:center;padding:4px 2px 8px;}
 .filter-row::-webkit-scrollbar{display:none;}
 .pill{display:flex;align-items:center;gap:5px;padding:7px 14px;border-radius:50px;background:var(--surface);border:2px solid transparent;box-shadow:var(--sh);cursor:pointer;font-family:'Instrument Sans',sans-serif;font-size:13px;font-weight:500;white-space:nowrap;transition:all .18s;color:var(--ink2);flex-shrink:0;}
 .pill:hover{transform:translateY(-2px);box-shadow:var(--sh-lg);}
@@ -478,6 +478,15 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 #welcomeOverlay.on{opacity:1;pointer-events:all;}
 #welcomeModal{background:var(--surface);border-radius:28px;padding:0;width:100%;max-width:400px;transform:scale(.92) translateY(16px);transition:transform .42s cubic-bezier(.32,.72,0,1);max-height:88dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;box-shadow:0 24px 64px rgba(13,13,13,.28);}
 #welcomeOverlay.on #welcomeModal{transform:scale(1) translateY(0);}
+#onboardTour{position:fixed;inset:0;z-index:99999;display:none;pointer-events:none;}
+#onboardTour.on{display:block;pointer-events:all;}
+.ob-backdrop{position:fixed;inset:0;background:rgba(13,13,13,.5);}
+.ob-highlight{position:fixed;z-index:100000;border-radius:12px;box-shadow:0 0 0 9999px rgba(13,13,13,.5), 0 0 0 3px var(--accent);pointer-events:none;transition:all .3s;}
+.ob-card{position:fixed;background:var(--surface);border-radius:18px;padding:20px 20px 16px;width:280px;box-shadow:0 8px 32px rgba(13,13,13,.25);z-index:100001;}
+.ob-card h3{font-family:"Bricolage Grotesque",sans-serif;font-size:16px;font-weight:800;color:var(--ink);margin-bottom:6px;}
+.ob-card p{font-size:13px;color:var(--ink2);line-height:1.6;margin-bottom:14px;}
+.ob-card .ob-next{background:var(--ink);color:white;border:none;border-radius:50px;padding:10px 20px;font-family:"Instrument Sans",sans-serif;font-size:13px;font-weight:700;cursor:pointer;}
+.ob-card .ob-skip{background:none;border:none;font-size:12px;color:var(--muted);cursor:pointer;margin-left:10px;}
 .welcome-hero{text-align:center;padding:40px 32px 28px;border-bottom:1.5px solid var(--warm);}
 .welcome-emoji{font-size:56px;line-height:1;display:block;margin-bottom:18px;}
 .welcome-title{font-family:'Bricolage Grotesque',sans-serif;font-size:26px;font-weight:800;color:var(--ink);line-height:1.2;letter-spacing:-.4px;}
@@ -1568,6 +1577,7 @@ async function bootMap(center, zoom) {
   startLiveCounter();
   bindUI();
   initFeedback();
+  initTour();
   initReportModal();
   initFieldLimits();
   initHours();
@@ -1678,7 +1688,7 @@ function applySort() {
   // duplicate markers that inflate cluster counts
   const gen = ++applySort._gen;
   visible.forEach((p,i) => setTimeout(() => { if (applySort._gen === gen) addMarker(p); }, i * 15));
-  updateCount(list.length); // count shows total matching, not just visible
+  updateCount(visible.length); // count shows visible spots in current viewport
   // Location-aware empty state — suppressed in admin mode
   const empty = document.getElementById('emptyState');
   const _esCooldown = window._emptyStateCooldownUntil || 0;
@@ -2903,6 +2913,11 @@ function initReportModal() {
     reportItems.push(item);
     sb.insert('reports', { place_id: reportingPlaceId, place_name: reportingPlaceName, type: selReportType, message: msg || null, device_id: DEVICE_ID })
       .catch(e => console.warn('[Spothan] Report save failed:', e));
+    fetch(`${SUPABASE_URL}/functions/v1/send-feedback-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ type: `🚨 REPORT [${selReportType}] — ${reportingPlaceName}`, message: msg || '(no message)' })
+    }).catch(e => console.warn('[Spothan] Report email failed:', e));
     closeReportModal();
     showToast('Report sent — thanks for keeping the map clean 🙏');
   });
@@ -4441,6 +4456,88 @@ markEngaged = function() {
     }
   } catch(e) {}
 })();
+
+// ── ONBOARDING TOUR ──
+const TOUR_KEY = 'spothan_tour_v1';
+const TOUR_STEPS = [
+  { title: '👋 Welcome to Spothan', body: 'Discover hidden local spots submitted by real people near you.', target: null },
+  { title: '🔍 Filter by category', body: 'Use these pills to filter spots by Food, Nature, Activities or Events.', target: '.filter-row' },
+  { title: '➕ Add a spot', body: 'Know a hidden gem? Tap + to submit it for everyone to discover.', target: '#fabBtn' },
+  { title: '🏆 Leaderboard', body: 'See the top contributors in your area and climb the ranks!', target: '#lbTopBtn' },
+  { title: 'ℹ️ About & settings', body: 'Tap the Spothan logo to find settings, install the app, and more.', target: '#aboutBtn' },
+  { title: '🎉 You\'re all set!', body: 'Happy exploring. Spothan is built by locals, for locals.', target: null }
+];
+let obStep = 0;
+
+function initTour() {
+  if (localStorage.getItem(TOUR_KEY)) return;
+  function showTour() {
+    if (localStorage.getItem(TOUR_KEY)) return;
+    const el = document.getElementById('onboardTour');
+    if (el.classList.contains('on')) return;
+    obStep = 0;
+    el.classList.add('on');
+    renderStep(0);
+  }
+  map.on('tilesloaded', function onTiles() {
+    map.off('tilesloaded', onTiles);
+    setTimeout(showTour, 800);
+  });
+  setTimeout(showTour, 6000); // hard fallback
+}
+
+function renderStep(i) {
+  const s = TOUR_STEPS[i];
+  document.getElementById('obTitle').textContent = s.title;
+  document.getElementById('obBody').textContent = s.body;
+  const card = document.getElementById('obCard');
+  const hl = document.getElementById('obHighlight');
+  const margin = 14;
+  const cardW = 280;
+  const cardH = 170;
+
+  if (s.target) {
+    const el = document.querySelector(s.target);
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const pad = 6;
+      // position highlight over element
+      hl.style.display = 'block';
+      hl.style.top = (r.top - pad) + 'px';
+      hl.style.left = (r.left - pad) + 'px';
+      hl.style.width = (r.width + pad*2) + 'px';
+      hl.style.height = (r.height + pad*2) + 'px';
+
+      // position card: try below, then above
+      let top = r.bottom + pad + margin;
+      if (top + cardH > window.innerHeight - margin) top = r.top - pad - cardH - margin;
+      top = Math.max(margin, top);
+      let left = r.left + r.width/2 - cardW/2;
+      left = Math.max(margin, Math.min(left, window.innerWidth - cardW - margin));
+      card.style.top = top + 'px';
+      card.style.left = left + 'px';
+      card.style.transform = 'none';
+    }
+  } else {
+    hl.style.display = 'none';
+    card.style.top = '50%';
+    card.style.left = '50%';
+    card.style.transform = 'translate(-50%, -50%)';
+  }
+  const btn = card.querySelector('.ob-next');
+  btn.textContent = i === TOUR_STEPS.length - 1 ? 'Get started 🎉' : 'Next →';
+}
+
+function nextStep() {
+  obStep++;
+  if (obStep >= TOUR_STEPS.length) { skipTour(); return; }
+  renderStep(obStep);
+}
+
+function skipTour() {
+  document.getElementById('onboardTour').classList.remove('on');
+  localStorage.setItem(TOUR_KEY, '1');
+}
 </script>
 
 <!-- ── LOCATION CONFIRM CARD ── -->
@@ -4538,7 +4635,7 @@ markEngaged = function() {
     <div id="aboutEmailSection"></div>
     <button onclick="closeAboutPanel()" style="width:100%;padding:13px;background:var(--ink);color:white;border:none;border-radius:12px;font-family:'Bricolage Grotesque',sans-serif;font-size:14px;font-weight:700;cursor:pointer;">Got it ✓</button>
     <div style="text-align:center;margin-top:12px">
-      <a href="https://spothan.com/privacy" target="_blank" style="font-size:12px;color:var(--muted);text-decoration:underline">🔒 Privacy &amp; Data (GDPR)</a>
+      <button onclick="closeAboutPanel();openPrivacy()" style="background:none;border:none;font-size:12px;color:var(--muted);cursor:pointer;text-decoration:underline">🔒 Privacy &amp; Data (GDPR)</button>
     </div>
   </div>
 </div>
@@ -4558,7 +4655,45 @@ markEngaged = function() {
     </label>
   </div>
 </div>
-
+<!-- ── PRIVACY MODAL ── -->
+<div class="about-overlay" id="privacyOverlay">
+  <div class="about-modal" style="padding-bottom:max(38px,calc(env(safe-area-inset-bottom,0px)+24px))">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <div style="font-family:'Bricolage Grotesque',sans-serif;font-size:18px;font-weight:800">🔒 Privacy &amp; Data</div>
+      <button onclick="document.getElementById('privacyOverlay').classList.remove('on')" style="background:var(--warm);border:none;border-radius:50%;width:32px;height:32px;font-size:14px;cursor:pointer;color:var(--ink2)">✕</button>
+    </div>
+    <div style="font-size:13px;color:var(--ink2);line-height:1.7;display:flex;flex-direction:column;gap:14px">
+      <div>
+        <div style="font-weight:700;color:var(--ink);margin-bottom:4px">What we store</div>
+        <div>Spothan stores a random <strong>device ID</strong> in your browser to remember your votes and submissions. No name, email, or personal data is collected unless you choose to provide it.</div>
+      </div>
+      <div>
+        <div style="font-weight:700;color:var(--ink);margin-bottom:4px">Leaderboard username</div>
+        <div>If you set a username, it is stored publicly alongside your device ID in our database to display on the leaderboard. You can change or delete it at any time.</div>
+      </div>
+      <div>
+        <div style="font-weight:700;color:var(--ink);margin-bottom:4px">Email (optional)</div>
+        <div>If you leave your email address, it is stored in our database and used only to send Spothan updates. We never share it with third parties.</div>
+      </div>
+      <div>
+        <div style="font-weight:700;color:var(--ink);margin-bottom:4px">Map data</div>
+        <div>Place submissions, votes, and reports are stored in our database. Submissions are public once approved. Your device ID is linked to your submissions.</div>
+      </div>
+      <div>
+        <div style="font-weight:700;color:var(--ink);margin-bottom:4px">Your rights (GDPR)</div>
+        <div>You have the right to access, correct, or delete your data. To request deletion of your data, contact us at <strong>info@spothan.com</strong> with your device ID (shown below).</div>
+      </div>
+      <div style="background:var(--bg);border-radius:10px;padding:10px 12px;font-size:11px;color:var(--muted);word-break:break-all">
+        Your device ID: <span id="privacyDeviceId" style="font-family:monospace;color:var(--ink)"></span>
+      </div>
+      <div>
+        <div style="font-weight:700;color:var(--ink);margin-bottom:4px">Cookies &amp; tracking</div>
+        <div>Spothan does not use advertising cookies or third-party tracking. Map tiles are loaded from OpenStreetMap servers, which may log your IP address per their own privacy policy.</div>
+      </div>
+    </div>
+    <button onclick="document.getElementById('privacyOverlay').classList.remove('on')" style="width:100%;padding:13px;background:var(--ink);color:white;border:none;border-radius:12px;font-family:'Bricolage Grotesque',sans-serif;font-size:14px;font-weight:700;cursor:pointer;margin-top:20px">Got it ✓</button>
+  </div>
+</div>
 <!-- ── USERNAME MODAL ── -->
 <div id="usernameOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(13,13,13,.6);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px;">
   <div style="background:var(--surface);border-radius:24px;padding:28px 22px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,.3);">
@@ -4590,6 +4725,16 @@ markEngaged = function() {
   </div>
 </div>
 <!-- ── WELCOME POPUP ── -->
+<div id="onboardTour">
+  <div class="ob-backdrop" onclick="skipTour()"></div>
+  <div class="ob-highlight" id="obHighlight" style="display:none"></div>
+  <div class="ob-card" id="obCard">
+    <h3 id="obTitle">👋 Welcome to Spothan</h3>
+    <p id="obBody">Discover hidden local spots submitted by real people near you.</p>
+    <button class="ob-next" onclick="nextStep()">Next →</button>
+    <button class="ob-skip" onclick="skipTour()">Skip</button>
+  </div>
+</div>
 <div id="welcomeOverlay">
   <div id="welcomeModal">
     <div class="welcome-hero">
