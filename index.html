@@ -982,16 +982,19 @@ async function loadPlaces() {
 
 // Viewport-bounded loader — call this instead of loadPlaces() once you have 5k+ places.
 // Requires PostGIS or just lat/lng range filter (below uses simple range, no PostGIS needed).
-async function loadPlacesInView(bounds) {
+async function loadPlacesInView(bounds, limit = 500) {
   const { _southWest: sw, _northEast: ne } = bounds;
+  const baseQuery = `status=eq.live&lat=gte.${sw.lat}&lat=lte.${ne.lat}&lng=gte.${sw.lng}&lng=lte.${ne.lng}`;
+  const select = `&select=id,name,category,emoji,lat,lng,address,description,hours,limited_time,start_ts,end_ts,created_at,device_id`;
   try {
-    const rows = await sb.select('places',
-      `status=eq.live&lat=gte.${sw.lat}&lat=lte.${ne.lat}&lng=gte.${sw.lng}&lng=lte.${ne.lng}` +
-      `&select=id,name,category,emoji,lat,lng,address,description,hours,limited_time,start_ts,end_ts,created_at,device_id`
-    );
-    const fresh = (rows || []).map(dbToPlace);
-    // Merge: add new, don't duplicate
-    fresh.forEach(p => { if (!places.find(x => x.id === p.id)) places.push(p); });
+    let offset = 0;
+    while (true) {
+      const rows = await sb.select('places', `${baseQuery}&limit=${limit}&offset=${offset}${select}`);
+      if (!rows || rows.length === 0) break;
+      rows.map(dbToPlace).forEach(p => { if (!places.find(x => x.id === p.id)) places.push(p); });
+      if (rows.length < limit) break; // last page
+      offset += limit;
+    }
     syncApprovedSubmissions();
   } catch(e) {
     console.warn('[Spothan] loadPlacesInView failed:', e);
@@ -1510,7 +1513,7 @@ async function bootMap(center, zoom) {
     showToast('⚠️ Running offline — connect Supabase for shared data');
   } else {
     document.getElementById('splashMsg').textContent = 'Loading places…';
-    await Promise.all([loadPlaces(), loadPending(), loadFeedback()]);
+    await Promise.all([loadPending(), loadFeedback()]);
     await loadVoteCounts(); // overlay separate votes table counts onto places
     await seedOnce();
   }
@@ -1551,6 +1554,10 @@ async function bootMap(center, zoom) {
     }
   });
   map.addLayer(clusterGroup);
+
+  // ── LOAD PLACES IN VIEW on init ──
+  await loadPlacesInView(map.getBounds());
+
   let moveTimer = null;
   let lastSortCenter = null;
   map.on('moveend zoomend', () => {
@@ -1568,7 +1575,11 @@ async function bootMap(center, zoom) {
       const moved = !lastSortCenter
         || lastSortCenter.z !== z
         || haversine(lastSortCenter.lat, lastSortCenter.lng, c.lat, c.lng) > threshold;
-      if (moved) { lastSortCenter = {lat:c.lat, lng:c.lng, z}; applySort(); }
+      if (moved) {
+        lastSortCenter = {lat:c.lat, lng:c.lng, z};
+        const limit = z < 11 ? 200 : z < 13 ? 500 : 1000;
+        loadPlacesInView(map.getBounds(), limit).then(() => applySort());
+      }
     }, 400);
   });
   applySort();
