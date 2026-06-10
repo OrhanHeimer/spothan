@@ -2118,14 +2118,26 @@ function bindUI() {
     searchSugs.style.top = (r.bottom + 6) + 'px';
   }
 
-  function renderSearchSuggestions(q) {
-    if (!q || q.length < 1) { searchSugs.classList.remove('open'); searchSugs.innerHTML=''; return; }
+  let searchDebounce = null;
+  async function renderSearchSuggestions(q) {
+    if (!q || q.length < 2) { searchSugs.classList.remove('open'); searchSugs.innerHTML=''; return; }
     const lq = q.toLowerCase();
-    const hits = places.filter(p => !isExpired(p) && (
-      p.name.toLowerCase().includes(lq) ||
-      (p.address && p.address.toLowerCase().includes(lq)) ||
-      (p.desc && p.desc.toLowerCase().includes(lq))
-    )).slice(0, 6);
+
+    // Search the full Supabase table, not just in-memory places
+    let hits = [];
+    try {
+      const rows = await sb.select('places',
+        `status=eq.live&name=ilike.*${encodeURIComponent(q)}*&limit=6` +
+        `&select=id,name,category,emoji,lat,lng,address,description,hours,limited_time,start_ts,end_ts,created_at,device_id`
+      );
+      hits = (rows || []).map(dbToPlace);
+    } catch(e) {
+      // Fallback to in-memory search if DB query fails
+      hits = places.filter(p => !isExpired(p) && (
+        p.name.toLowerCase().includes(lq) ||
+        (p.address && p.address.toLowerCase().includes(lq))
+      )).slice(0, 6);
+    }
 
     if (!hits.length) { searchSugs.classList.remove('open'); searchSugs.innerHTML=''; return; }
 
@@ -2146,11 +2158,14 @@ function bindUI() {
     searchSugs.classList.add('open');
 
     searchSugs.querySelectorAll('.search-sug-item').forEach(el => {
-      el.addEventListener('mousedown', e => {
+      el.addEventListener('mousedown', async e => {
         e.preventDefault();
         const id = parseInt(el.dataset.id);
-        const p  = places.find(x => x.id === id);
+        // Use in-memory place if available, otherwise find from hits
+        let p = places.find(x => x.id === id) || hits.find(x => x.id === id);
         if (!p) return;
+        // Add to in-memory places if not already there
+        if (!places.find(x => x.id === p.id)) places.push(p);
         // Close suggestions, clear search, restore full map
         searchInput.value = '';
         searchClear.style.display = 'none';
@@ -2180,7 +2195,8 @@ function bindUI() {
     const q = e.target.value;
     searchClear.style.display = q ? 'block' : 'none';
     filterBySearch(q);
-    renderSearchSuggestions(q);
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => renderSearchSuggestions(q), 300);
   });
 
   searchInput.addEventListener('focus', e => {
