@@ -960,6 +960,7 @@ function saveWelcomeConfig(cfg) {
 
 // ── IN-MEMORY STORES — populated from Supabase on load ──
 let places = [];
+const placesIndex = new Set(); // fast O(1) dedup by id
 let pendingPlaces = [];
 let feedbackItems = [];
 
@@ -991,8 +992,17 @@ async function loadPlacesInView(bounds, limit = 500) {
     while (true) {
       const rows = await sb.select('places', `${baseQuery}&limit=${limit}&offset=${offset}${select}`);
       if (!rows || rows.length === 0) break;
-      rows.map(dbToPlace).forEach(p => { if (!places.find(x => x.id === p.id)) places.push(p); });
-      if (rows.length < limit) break; // last page
+      const fresh = [];
+      rows.map(dbToPlace).forEach(p => {
+        if (!placesIndex.has(p.id)) {
+          placesIndex.add(p.id);
+          places.push(p);
+          fresh.push(p);
+        }
+      });
+      // Render each page immediately as it arrives instead of waiting for all pages
+      fresh.forEach(p => { if (!isExpired(p) && (activeFilter === 'all' || p.cat === activeFilter)) addMarker(p); });
+      if (rows.length < limit) break;
       offset += limit;
     }
     syncApprovedSubmissions();
@@ -1639,14 +1649,15 @@ function initMap() {
   );
 }
 
-function addMarker(p) {
-  if (isExpired(p)) return;
+function buildMarker(p) {
+  if (isExpired(p)) return null;
+  if (markers[p.id]) return null; // already exists
   const ws=wScore(p), raw=rawCounts(p);
   const sc=Math.round(ws.score), pct=Math.round(ws.ratio*100);
   const scCls=sc>5?'pos':sc<0?'neg':'zero';
   const scLbl=sc>=0?`+${sc}`:`${sc}`;
   const urgent=isUrgent(p);
-  const isHot=hotPlaceIds.has(p.id) && !urgent; // don't stack with urgent ring
+  const isHot=hotPlaceIds.has(p.id) && !urgent;
   const pinCls=urgent?'pin-urgent':`pin-${p.cat}${isHot?' pin-hot':''}`;
   const ring=urgent?'<div class="pin-urgent-ring"></div>':'';
   const hotHtml=isHot?'<div class="hot-glow-wrap"><div class="hot-ring hot-ring-1"></div><div class="hot-ring hot-ring-2"></div></div>':'';
@@ -1661,7 +1672,13 @@ function addMarker(p) {
     m.setPopupContent(normalPopup);
     m.openPopup();
   });
-  markers[p.id]=m;
+  return m;
+}
+
+function addMarker(p) {
+  const m = buildMarker(p);
+  if (!m) return;
+  markers[p.id] = m;
   clusterGroup.addLayer(m);
 }
 
@@ -1698,7 +1715,15 @@ function applySort() {
   // applySort (still pending in setTimeout queue) are discarded — prevents
   // duplicate markers that inflate cluster counts
   const gen = ++applySort._gen;
-  visible.forEach((p,i) => setTimeout(() => { if (applySort._gen === gen) addMarker(p); }, i * 15));
+  // Batch add all markers at once — Leaflet.markercluster handles rendering efficiently
+  const newMarkers = [];
+  visible.forEach(p => {
+    if (applySort._gen !== gen) return;
+    if (markers[p.id]) return; // already on map
+    const m = buildMarker(p);
+    if (m) { markers[p.id] = m; newMarkers.push(m); }
+  });
+  if (newMarkers.length) clusterGroup.addLayers(newMarkers);
   updateCount(visible.length); // count shows visible spots in current viewport
   // Location-aware empty state — suppressed in admin mode
   const empty = document.getElementById('emptyState');
@@ -2984,10 +3009,14 @@ function rebuildMarkersForAdmin() {
   // Rebuild all live markers so click handlers respect adminMode
   clusterGroup.clearLayers();
   Object.keys(markers).forEach(k => delete markers[k]);
-  ++applySort._gen; // cancel any pending staggered addMarker calls
+  ++applySort._gen;
   const list = places.filter(p => !isExpired(p) && (activeFilter==='all' || p.cat===activeFilter));
-  const gen = applySort._gen;
-  list.forEach((p,i) => setTimeout(() => { if (applySort._gen === gen) addMarker(p); }, i * 15));
+  const newMarkers = [];
+  list.forEach(p => {
+    const m = buildMarker(p);
+    if (m) { markers[p.id] = m; newMarkers.push(m); }
+  });
+  if (newMarkers.length) clusterGroup.addLayers(newMarkers);
 }
 
 function toggleReviewMapMode() {
