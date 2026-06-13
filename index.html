@@ -1060,24 +1060,23 @@ async function loadFeedback() {
 //     FROM votes GROUP BY place_id;
 
 async function loadVoteCounts() {
+  if (!places.length) return;
   try {
-    const rows = await sb.select('vote_counts', '');
+    const ids = places.map(p => p.id).join(',');
+    const rows = await sb.select('vote_counts', `place_id=in.(${ids})`);
     if (!rows || !rows.length) return;
     const map = {};
     rows.forEach(r => { map[r.place_id] = { up: parseInt(r.up_count)||0, dn: parseInt(r.dn_count)||0 }; });
+    const ts = now();
     places.forEach(p => {
       const vc = map[p.id];
       if (!vc) return;
-      // Replace the votes array with lightweight synthetic entries from the DB counts
-      // This keeps wScore/rawCounts working without fat JSON arrays
-      const ts = now();
       p.votes = [];
       for (let i = 0; i < vc.up; i++) p.votes.push({ ts: ts - i * DAY, dir: 'up' });
       for (let i = 0; i < vc.dn; i++) p.votes.push({ ts: ts - i * DAY, dir: 'dn' });
     });
   } catch(e) {
-    // votes table may not exist yet — fall back to votes array in places row (legacy)
-    console.warn('[Spothan] loadVoteCounts failed (votes table not set up yet):', e);
+    console.warn('[Spothan] loadVoteCounts failed:', e);
   }
 }
 
@@ -1524,7 +1523,6 @@ async function bootMap(center, zoom) {
   } else {
     document.getElementById('splashMsg').textContent = 'Loading places…';
     await Promise.all([loadPending(), loadFeedback()]);
-    await loadVoteCounts(); // overlay separate votes table counts onto places
     await seedOnce();
   }
 
@@ -1567,6 +1565,7 @@ async function bootMap(center, zoom) {
 
   // ── LOAD PLACES IN VIEW on init ──
   await loadPlacesInView(map.getBounds());
+  await loadVoteCounts(); // apply vote counts after places are in memory
 
   let moveTimer = null;
   let lastSortCenter = null;
@@ -1588,7 +1587,9 @@ async function bootMap(center, zoom) {
       if (moved) {
         lastSortCenter = {lat:c.lat, lng:c.lng, z};
         const limit = z < 11 ? 200 : z < 13 ? 500 : 1000;
-        loadPlacesInView(map.getBounds(), limit).then(() => applySort());
+        loadPlacesInView(map.getBounds(), limit).then(() => {
+          loadVoteCounts().then(() => applySort());
+        });
       }
     }, 400);
   });
