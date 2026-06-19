@@ -1723,7 +1723,7 @@ function buildMarker(p) {
   let eBadge = '';
   if (isLTPlace(p)) {
     const duration = (p.start && p.end) ? Math.round((p.end - p.start) / DAY) : null;
-    const durStr = (duration && isFut) ? ` · lasts ${duration} day${duration>1?'s':''}` : '';
+    const durStr = (duration && isFutureEvent) ? ` · lasts ${duration} day${duration>1?'s':''}` : '';
     let timeStr;
     if (dus !== null) timeStr = dus===0?'Starts today':dus===1?'Starts tomorrow':`Starts in ${dus} days`;
     else timeStr = dl===0?'Ends today':dl===1?'Ends tomorrow':`${dl} days left`;
