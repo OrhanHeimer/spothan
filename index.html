@@ -1764,13 +1764,13 @@ function applySort() {
   else if (activeSort==='ending')   { list=list.filter(p=>isLTPlace(p)); list.sort((a,b)=>daysLeft(a)-daysLeft(b)); }
   else if (activeSort==='saved')    list=list.filter(p=>savedPlaces.has(p.id));
 
-  // ── POPULAR HIGHLIGHT: top 10% by eventScore within current viewport only ──
-  const bounds = map && map.getBounds ? map.getBounds().pad(0.2) : null;
-  const viewportLive = places.filter(p => !isExpired(p) && (!bounds || bounds.contains([p.lat, p.lng])));
-  if (viewportLive.length > 0) {
-    const sorted = [...viewportLive].sort((a,b) => eventScore(b) - eventScore(a));
+  // ── POPULAR HIGHLIGHT: compute top 10% by eventScore across ALL live places ──
+  const allLive = places.filter(p => !isExpired(p));
+  if (allLive.length > 0) {
+    const sorted = [...allLive].sort((a,b) => eventScore(b) - eventScore(a));
     const cutoff = Math.max(1, Math.ceil(sorted.length * 0.10));
     const topScores = sorted.slice(0, cutoff);
+    // Only mark as hot if the place has at least 1 upvote (avoid empty places)
     hotPlaceIds = new Set(topScores.filter(p => rawCounts(p).up > 0).map(p => p.id));
   } else {
     hotPlaceIds = new Set();
