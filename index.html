@@ -2073,6 +2073,12 @@ async function submitPlace() {
       // Write submitter's automatic upvote to votes table
       upsertVote(saved.id, 'up');
       saved.votes = [{ ts: now(), dir: 'up' }]; // local only for immediate UI
+      // Notify admin of new submission
+      fetch(`${SUPABASE_URL}/functions/v1/send-feedback-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ type: 'new_submission', name: saved.name, category: saved.cat, address: saved.address, emoji: saved.emoji })
+      }).catch(e => console.warn('[Spothan] Submission notification failed:', e));
     } else {
       saved = { ...np, id: now(), votes: [{ ts: now(), dir: 'up' }] };
       pendingPlaces.push(saved);
@@ -2587,6 +2593,37 @@ function openAdminPanel(p) {
   _adminPanelPlaceId = p.id;
   map.closePopup();
   document.getElementById('adminEditContent').innerHTML = buildAdminLivePopup(p);
+
+  // Wire emoji picker for admin edit panel
+  const alEmojiBtn = document.getElementById(`alEmojiBtn${p.id}`);
+  const alEmojiPanel = document.getElementById(`alEmojiPanel${p.id}`);
+  const alEmojiInput = document.getElementById(`alEmoji${p.id}`);
+  if (alEmojiBtn && alEmojiPanel) {
+    // Get current category
+    const getCat = () => document.querySelector(`#alCat${p.id} .cat-btn.active`)?.dataset.cat || p.cat;
+    const buildAdminEmojiGrid = () => {
+      const cat = getCat();
+      const emojis = EMOJI_SETS[cat] || EMOJI_SETS.other;
+      alEmojiPanel.innerHTML = `<div class="emoji-grid">${emojis.map(e => `<button class="emoji-opt" data-e="${e}">${e}</button>`).join('')}</div>`;
+      alEmojiPanel.querySelectorAll('.emoji-opt').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const e = btn.dataset.e;
+          alEmojiInput.value = e;
+          alEmojiBtn.childNodes[0].textContent = e + ' ';
+          document.getElementById(`alEmojiLabel${p.id}`).textContent = e;
+          alEmojiPanel.classList.remove('open');
+        });
+      });
+    };
+    alEmojiBtn.addEventListener('click', () => {
+      const isOpen = alEmojiPanel.classList.toggle('open');
+      if (isOpen) buildAdminEmojiGrid();
+    });
+    // Rebuild grid when category changes
+    document.getElementById(`alCat${p.id}`)?.addEventListener('click', () => {
+      if (alEmojiPanel.classList.contains('open')) buildAdminEmojiGrid();
+    });
+  }
   document.getElementById('adminEditPanel').style.display = 'block';
   // Wire geocoder directly — no popup interference
   const addrInput = document.getElementById(`alAddr${p.id}`);
@@ -3037,20 +3074,15 @@ function enterAdminMode() {
   adminMode = true;
   document.getElementById('adminBar').classList.add('on');
   document.body.style.paddingTop = '';
-  // Make live markers clickable for editing
-  rebuildMarkersForAdmin();
+  // Markers pick up adminMode on next click — no rebuild needed
 }
 
 function exitAdminMode() {
   adminMode = false;
   reviewMapMode = false;
   document.getElementById('adminBar').classList.remove('on');
-  // Remove admin pending markers
   Object.values(adminPendingMarkers).forEach(m => map.removeLayer(m));
   adminPendingMarkers = {};
-  // Rebuild normal markers
-  rebuildMarkersForAdmin();
-  // If review panel is hidden, also remove the hash
   history.replaceState(null, '', location.pathname);
 }
 
@@ -3384,7 +3416,11 @@ function buildAdminLivePopup(p) {
     <div style="display:flex;gap:8px">
       <div class="admin-popup-field" style="flex:1">
         <div class="admin-popup-label">Icon</div>
-        <input class="admin-popup-emoji-input" id="alEmoji${p.id}" value="${esc(p.emoji)}" maxlength="4">
+        <div class="emoji-picker-wrap" style="width:100%">
+          <button type="button" class="emoji-preview-btn" id="alEmojiBtn${p.id}">${esc(p.emoji)} <span id="alEmojiLabel${p.id}">${esc(p.emoji)}</span> ▾</button>
+          <div class="emoji-grid-panel" id="alEmojiPanel${p.id}"></div>
+        </div>
+        <input type="hidden" id="alEmoji${p.id}" value="${esc(p.emoji)}">
       </div>
       <div class="admin-popup-field" style="flex:1">
         <div class="admin-popup-label">Category</div>
