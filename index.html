@@ -1581,7 +1581,7 @@ async function bootMap(center, zoom) {
   //   Lower  = less clustering, more individual pins visible (try 30–50)
   //   Higher = more aggressive clustering, cleaner map at cost of detail (try 80–120)
   //   Default: 60
-  const CLUSTER_RADIUS = 60;
+  const CLUSTER_RADIUS = 40;
   // disableClusteringAtZoom: zoom level at which ALL pins always show individually.
   //   17 = street level. Lower to keep clustering longer (e.g. 15). Remove to never uncluster.
   const UNCLUSTER_ZOOM = 17;
