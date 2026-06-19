@@ -198,6 +198,8 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .pin-score.neg{color:var(--accent);}
 .pin-score.zero{color:var(--muted);}
 .pin-urgent-ring{position:absolute;inset:-5px;border-radius:50% 50% 50% 0;border:2px solid var(--accent);animation:urgentRing 2s ease-in-out infinite;}
+.pin-urgent .hot-glow-wrap::before{background:radial-gradient(circle, rgba(255,60,0,.6) 0%, rgba(255,0,0,.25) 50%, transparent 72%);}
+.pin-urgent .hot-ring{border-color:rgba(255,80,0,.8);}
 @keyframes urgentRing{0%,100%{opacity:.8;transform:scale(1);}50%{opacity:.2;transform:scale(1.12);}}
 .pin-food{background:var(--food);}
 .pin-nature{background:var(--nature);}
@@ -217,6 +219,7 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .cp-ebadge{display:inline-flex;align-items:center;gap:5px;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;margin-bottom:8px;}
 .cp-ebadge.normal{background:#fff3e0;color:#c45000;}
 .cp-ebadge.urgent{background:#ffe0e0;color:var(--accent);}
+.cp-ebadge.future{background:#e8f4ff;color:#0066cc;}
 .cp-votes{display:flex;align-items:center;gap:6px;margin-bottom:9px;font-size:12px;font-weight:600;}
 .cp-up{color:var(--green);}
 .cp-dn{color:var(--accent);}
@@ -240,6 +243,7 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .event-banner{margin:10px 18px 0;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;}
 .event-banner.active{background:#fff8e6;color:#7a5000;}
 .event-banner.urgent{background:#ffe8e4;color:#c0200c;}
+.event-banner.future{background:#e8f4ff;color:#0055bb;}
 .eb-icon{font-size:18px;flex-shrink:0;}
 .eb-lbl{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:2px;}
 .eb-time{font-size:13px;font-weight:600;}
@@ -1517,7 +1521,8 @@ function rawCounts(p) { let u=0,d=0; p.votes.forEach(v=>v.dir==='up'?u++:d++); r
 function isLTPlace(p) { return p.limitedTime === true; }
 function isExpired(p) { return isLTPlace(p) && p.end && p.end < now(); }
 function daysLeft(p) { return isLTPlace(p) && p.end ? Math.max(0, Math.ceil((p.end-now())/DAY)) : null; }
-function isUrgent(p) { const dl=daysLeft(p); return dl!==null && dl<=3; }
+function daysUntilStart(p) { return isLTPlace(p) && p.start && p.start > now() ? Math.ceil((p.start-now())/DAY) : null; }
+function isUrgent(p) { const dl=daysLeft(p); return dl!==null && dl<=3 && daysUntilStart(p)===null; }
 function eventScore(p) { const s=wScore(p).score,dl=daysLeft(p); return dl===null?s:s+Math.max(0,(7-dl)/7)*15; }
 function longevityScore(p) {
   const ws=wScore(p), n=p.votes.length;
@@ -1581,7 +1586,7 @@ async function bootMap(center, zoom) {
   //   Lower  = less clustering, more individual pins visible (try 30–50)
   //   Higher = more aggressive clustering, cleaner map at cost of detail (try 80–120)
   //   Default: 60
-  const CLUSTER_RADIUS = 40;
+  const CLUSTER_RADIUS = 60;
   // disableClusteringAtZoom: zoom level at which ALL pins always show individually.
   //   17 = street level. Lower to keep clustering longer (e.g. 15). Remove to never uncluster.
   const UNCLUSTER_ZOOM = 17;
@@ -1706,13 +1711,26 @@ function buildMarker(p) {
   const scCls=sc>5?'pos':sc<0?'neg':'zero';
   const scLbl=sc>=0?`+${sc}`:`${sc}`;
   const urgent=isUrgent(p);
-  const isHot=hotPlaceIds.has(p.id) && !urgent;
-  const pinCls=urgent?'pin-urgent':`pin-${p.cat}${isHot?' pin-hot':''}`;
-  const ring=urgent?'<div class="pin-urgent-ring"></div>':'';
-  const hotHtml=isHot?'<div class="hot-glow-wrap"><div class="hot-ring hot-ring-1"></div><div class="hot-ring hot-ring-2"></div></div>':'';
-  const icon=L.divIcon({className:'',html:`<div class="map-pin ${pinCls}">${hotHtml}${ring}<div class="map-pin-inner">${p.emoji}</div><div class="pin-score ${scCls}">${scLbl}</div></div>`,iconSize:[38,38],iconAnchor:[19,38],popupAnchor:[0,-44]});
+  const dus=daysUntilStart(p);
   const dl=daysLeft(p);
-  const eBadge=isLTPlace(p)?`<div class="cp-ebadge ${urgent?'urgent':'normal'}">${urgent?'🔴':'🟡'} ${dl===0?'Ends today':dl===1?'Ends tomorrow':`${dl} days left`}</div>`:'';
+  const isFutureEvent = isLTPlace(p) && dus !== null;
+  const isHot=hotPlaceIds.has(p.id) && !urgent;
+  const pinCls=urgent?'pin-urgent':`pin-${p.cat}${(isHot||isFutureEvent)?' pin-hot':''}`;
+  const ring=urgent?'<div class="pin-urgent-ring"></div>':'';
+  const hotHtml=(isHot||isFutureEvent||urgent)?'<div class="hot-glow-wrap"><div class="hot-ring hot-ring-1"></div><div class="hot-ring hot-ring-2"></div></div>':'';
+  const icon=L.divIcon({className:'',html:`<div class="map-pin ${pinCls}">${hotHtml}${ring}<div class="map-pin-inner">${p.emoji}</div><div class="pin-score ${scCls}">${scLbl}</div></div>`,iconSize:[38,38],iconAnchor:[19,38],popupAnchor:[0,-44]});
+  // Build rich event badge
+  let eBadge = '';
+  if (isLTPlace(p)) {
+    const duration = (p.start && p.end) ? Math.round((p.end - p.start) / DAY) : null;
+    const durStr = duration ? ` · lasts ${duration} day${duration>1?'s':''}` : '';
+    let timeStr;
+    if (dus !== null) timeStr = dus===0?'Starts today':dus===1?'Starts tomorrow':`Starts in ${dus} days`;
+    else timeStr = dl===0?'Ends today':dl===1?'Ends tomorrow':`${dl} days left`;
+    const cls = urgent ? 'urgent' : isFutureEvent ? 'future' : 'normal';
+    const icon = urgent ? '🔴' : isFutureEvent ? '🗓️' : '🟡';
+    eBadge = `<div class="cp-ebadge ${cls}">${icon} ${timeStr}${durStr}</div>`;
+  }
   const normalPopup = `<div class="cp"><div class="cp-top"><span class="cp-emoji">${esc(p.emoji)}</span><div><div class="cp-name">${esc(p.name)}</div></div></div><div class="cp-sub">📍 ${esc(p.address)}</div>${eBadge}<div class="cp-votes"><span class="cp-up">👍 ${raw.up}</span><div class="cp-bar"><div class="cp-fill" style="width:${pct}%"></div></div><span class="cp-dn">👎 ${raw.dn}</span></div><button class="cp-btn" onclick="openSheet(${p.id})">View Details →</button></div>`;
   const m=L.marker([p.lat,p.lng],{icon, _spothanId: p.id});
   m.bindPopup(L.popup({closeButton:false,maxWidth:300}).setContent(normalPopup));
@@ -1811,9 +1829,12 @@ function openSheet(id) {
   const myVote=userVotes[p.id];
   let evBanner='';
   if (isLTPlace(p)) {
-    const dl=daysLeft(p), urg=isUrgent(p);
-    const msg=dl===0?'Ends today!':dl===1?'Ends tomorrow!':`Ends in ${dl} days`;
-    evBanner=`<div class="event-banner ${urg?'urgent':'active'}"><span class="eb-icon">${urg?'🔴':'📅'}</span><div><div class="eb-lbl">Time-limited</div><div class="eb-time">${msg}</div></div></div>`;
+    const dl=daysLeft(p), urg=isUrgent(p), dus=daysUntilStart(p);
+    const duration = (p.start && p.end) ? Math.round((p.end - p.start) / DAY) : null;
+    const durStr = duration ? `, lasts ${duration} day${duration>1?'s':''}` : '';
+    const isFut = dus !== null;
+    const msg=isFut?(dus===0?'Starts today':dus===1?'Starts tomorrow':`Starts in ${dus} days`):dl===0?'Ends today!':dl===1?'Ends tomorrow!':`Ends in ${dl} days`;
+    evBanner=`<div class="event-banner ${urg?'urgent':isFut?'future':'active'}"><span class="eb-icon">${urg?'🔴':isFut?'🗓️':'📅'}</span><div><div class="eb-lbl">Time-limited</div><div class="eb-time">${msg}${durStr}</div></div></div>`;
   }
   const distStr = userCenter
     ? `<div class="sh-dist">📏 ${formatDist(haversine(userCenter[0],userCenter[1],p.lat,p.lng))}</div>`
@@ -2223,8 +2244,7 @@ function bindUI() {
 
     searchSugs.innerHTML = hits.map(p => {
       const catColor = catColors[p.cat] || '#888';
-      const matchAddr = p.address && p.address.toLowerCase().includes(lq);
-      const metaText  = matchAddr ? p.address : p.cat.charAt(0).toUpperCase() + p.cat.slice(1);
+      const metaText = p.address || p.cat.charAt(0).toUpperCase() + p.cat.slice(1);
       return `<div class="search-sug-item" data-id="${p.id}">
         <div class="search-sug-emoji">${esc(p.emoji)}</div>
         <div class="search-sug-info">
