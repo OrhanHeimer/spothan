@@ -513,44 +513,45 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
    We position it at the visual centre of the teardrop (slightly up from pin anchor). */
 .hot-glow-wrap{
   position:absolute;
+  /* pin is 38×38, visual emoji centre is roughly at (19,19) before rotate */
   top:0;left:0;right:0;bottom:0;
   display:flex;align-items:center;justify-content:center;
+  /* undo the pin's -45° so child elements render upright / circular */
   transform:rotate(45deg);
   pointer-events:none;
   z-index:0;
   overflow:visible;
 }
+/* Pulsing gold glow halo */
 .hot-glow-wrap::before{
   content:'';
   position:absolute;
-  width:64px;height:64px;
+  width:56px;height:56px;
   border-radius:50%;
-  background:radial-gradient(circle, rgba(255,210,0,.85) 0%, rgba(255,160,0,.4) 50%, transparent 72%);
-  animation:hotPulse 1.4s ease-in-out infinite;
+  background:radial-gradient(circle, rgba(255,210,0,.6) 0%, rgba(255,160,0,.25) 50%, transparent 72%);
+  animation:hotPulse 2s ease-in-out infinite;
 }
+/* Two radiating gold rings */
 .hot-ring{
   position:absolute;
   border-radius:50%;
-  border:2.5px solid rgba(255,200,0,.9);
-  width:54px;height:54px;
+  border:2px solid rgba(255,200,0,.8);
+  width:50px;height:50px;
   opacity:0;
 }
-.hot-ring-1{animation:hotRadiate 1.6s ease-out infinite;}
-.hot-ring-2{animation:hotRadiate 1.6s ease-out infinite 0.8s;}
+.hot-ring-1{animation:hotRadiate 2.4s ease-out infinite;}
+.hot-ring-2{animation:hotRadiate 2.4s ease-out infinite 1.2s;}
 @keyframes clusterHotPulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.18);opacity:1}}
+/* Gold score badge */
 .map-pin.pin-hot .pin-score{background:linear-gradient(135deg,#f5a623,#ffd700);color:#3a2000;border:1px solid rgba(255,180,0,.4);}
 @keyframes hotPulse{
-  0%,100%{opacity:.6;transform:scale(1);}
-  50%{opacity:1;transform:scale(1.35);}
+  0%,100%{opacity:.7;transform:scale(1);}
+  50%{opacity:1;transform:scale(1.15);}
 }
 @keyframes hotRadiate{
-  0%{transform:scale(0.4);opacity:1;}
-  100%{transform:scale(2.8);opacity:0;}
+  0%{transform:scale(0.5);opacity:.9;}
+  100%{transform:scale(2.2);opacity:0;}
 }
-.pin-urgent .hot-glow-wrap::before{background:radial-gradient(circle, rgba(255,60,0,.9) 0%, rgba(255,0,0,.4) 50%, transparent 72%);}
-.pin-urgent .hot-ring{border-color:rgba(255,80,0,.9);}
-.pin-future-event .hot-glow-wrap::before{background:radial-gradient(circle, rgba(0,140,255,.85) 0%, rgba(0,100,220,.35) 50%, transparent 72%);}
-.pin-future-event .hot-ring{border-color:rgba(0,160,255,.9);}
 /* ── LIST SIDE PANEL ── */
 .list-panel{position:fixed;top:0;right:0;bottom:0;width:340px;max-width:92vw;background:var(--surface);z-index:250;box-shadow:-4px 0 32px rgba(13,13,13,.13);transform:translateX(100%);transition:transform .35s cubic-bezier(.32,.72,0,1);display:flex;flex-direction:column;overflow:hidden;}
 .list-panel.open{transform:translateX(0);}
@@ -741,14 +742,8 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
       <div class="f-grp">
         <label class="f-lbl">Active Dates</label>
         <div class="date-row">
-          <div style="display:flex;flex-direction:column;gap:4px">
-            <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Start date</span>
-            <input class="f-in" type="date" id="pStart">
-          </div>
-          <div style="display:flex;flex-direction:column;gap:4px">
-            <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">End date</span>
-            <input class="f-in" type="date" id="pEnd">
-          </div>
+          <input class="f-in" type="date" id="pStart">
+          <input class="f-in" type="date" id="pEnd">
         </div>
       </div>
     </div>
@@ -1720,18 +1715,18 @@ function buildMarker(p) {
   const dl=daysLeft(p);
   const isFutureEvent = isLTPlace(p) && dus !== null;
   const isHot=hotPlaceIds.has(p.id) && !urgent;
-  const pinCls=urgent?'pin-urgent':`pin-${p.cat}${isFutureEvent?' pin-future-event':isHot?' pin-hot':''}`;
+  const pinCls=urgent?'pin-urgent':`pin-${p.cat}${(isHot||isFutureEvent)?' pin-hot':''}`;
   const ring=urgent?'<div class="pin-urgent-ring"></div>':'';
   const hotHtml=(isHot||isFutureEvent||urgent)?'<div class="hot-glow-wrap"><div class="hot-ring hot-ring-1"></div><div class="hot-ring hot-ring-2"></div></div>':'';
   const icon=L.divIcon({className:'',html:`<div class="map-pin ${pinCls}">${hotHtml}${ring}<div class="map-pin-inner">${p.emoji}</div><div class="pin-score ${scCls}">${scLbl}</div></div>`,iconSize:[38,38],iconAnchor:[19,38],popupAnchor:[0,-44]});
   // Build rich event badge
   let eBadge = '';
   if (isLTPlace(p)) {
-    const duration = (p.start && p.end) ? Math.round((p.end - p.start) / DAY) + 1 : null;
-    const durStr = (duration && isFutureEvent) ? `, lasts ${duration} day${duration>1?'s':''}` : '';
+    const duration = (p.start && p.end) ? Math.round((p.end - p.start) / DAY) : null;
+    const durStr = (duration && isFutureEvent) ? ` · lasts ${duration} day${duration>1?'s':''}` : '';
     let timeStr;
     if (dus !== null) timeStr = dus===0?'Starts today':dus===1?'Starts tomorrow':`Starts in ${dus} days`;
-    else timeStr = dl===0?'Ends today':dl===1?'1 day left':`${dl} days left`;
+    else timeStr = dl===0?'Ends today':dl===1?'Ends tomorrow':`${dl} days left`;
     const cls = urgent ? 'urgent' : isFutureEvent ? 'future' : 'normal';
     const icon = urgent ? '🔴' : isFutureEvent ? '🗓️' : '🟡';
     eBadge = `<div class="cp-ebadge ${cls}">${icon} ${timeStr}${durStr}</div>`;
@@ -1835,10 +1830,10 @@ function openSheet(id) {
   let evBanner='';
   if (isLTPlace(p)) {
     const dl=daysLeft(p), urg=isUrgent(p), dus=daysUntilStart(p);
-    const isFut = dus !== null;
-    const duration = (p.start && p.end) ? Math.round((p.end - p.start) / DAY) + 1 : null;
+    const duration = (p.start && p.end) ? Math.round((p.end - p.start) / DAY) : null;
     const durStr = (duration && isFut) ? `, lasts ${duration} day${duration>1?'s':''}` : '';
-    const msg=isFut?(dus===0?'Starts today':dus===1?'Starts tomorrow':`Starts in ${dus} days`):dl===0?'Ends today':dl===1?'1 day left':`${dl} days left`;
+    const isFut = dus !== null;
+    const msg=isFut?(dus===0?'Starts today':dus===1?'Starts tomorrow':`Starts in ${dus} days`):dl===0?'Ends today!':dl===1?'Ends tomorrow!':`Ends in ${dl} days`;
     evBanner=`<div class="event-banner ${urg?'urgent':isFut?'future':'active'}"><span class="eb-icon">${urg?'🔴':isFut?'🗓️':'📅'}</span><div><div class="eb-lbl">Time-limited</div><div class="eb-time">${msg}${durStr}</div></div></div>`;
   }
   const distStr = userCenter
