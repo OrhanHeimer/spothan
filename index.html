@@ -1785,7 +1785,7 @@ function buildMarker(p) {
   let eBadge = '';
   if (isLTPlace(p)) {
     // +1 because end date is inclusive (Fri→Sun = 3 days)
-    const duration = (p.start && p.end) ? Math.round((p.end - p.start) / DAY) + 1 : null;
+    const duration = (p.start && p.end) ? Math.round((p.end - p.start) / DAY) : null;
     let timeStr;
     if (dus !== null) {
       timeStr = dus===0?'Starts today':dus===1?'Starts tomorrow':`Starts in ${dus} days`;
