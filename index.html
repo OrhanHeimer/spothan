@@ -537,14 +537,14 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
   width:50px;height:50px;
   opacity:0;
 }
-.hot-ring-1{animation:hotRadiate 2.4s ease-out infinite;}
-.hot-ring-2{animation:hotRadiate 2.4s ease-out infinite 1.2s;}
+.hot-ring-1{animation:hotRadiate 1.6s ease-out infinite;}
+.hot-ring-2{animation:hotRadiate 1.6s ease-out infinite 0.8s;}
 @keyframes clusterHotPulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.18);opacity:1}}
 /* Gold score badge */
 .map-pin.pin-hot .pin-score{background:linear-gradient(135deg,#f5a623,#ffd700);color:#3a2000;border:1px solid rgba(255,180,0,.4);}
 @keyframes hotPulse{
-  0%,100%{opacity:.7;transform:scale(1);}
-  50%{opacity:1;transform:scale(1.15);}
+  0%,100%{opacity:.9;transform:scale(1);}
+  50%{opacity:1;transform:scale(1.20);}
 }
 @keyframes hotRadiate{
   0%{transform:scale(0.5);opacity:.9;}
@@ -1643,10 +1643,10 @@ async function bootMap(center, zoom) {
   //   Lower  = less clustering, more individual pins visible (try 30–50)
   //   Higher = more aggressive clustering, cleaner map at cost of detail (try 80–120)
   //   Default: 60
-  const CLUSTER_RADIUS = 60;
+  const CLUSTER_RADIUS = 35;
   // disableClusteringAtZoom: zoom level at which ALL pins always show individually.
   //   17 = street level. Lower to keep clustering longer (e.g. 15). Remove to never uncluster.
-  const UNCLUSTER_ZOOM = 17;
+  const UNCLUSTER_ZOOM = 20;
   // ─────────────────────────────────────────────────────────────────────────
   clusterGroup = L.markerClusterGroup({
     showCoverageOnHover:false,
