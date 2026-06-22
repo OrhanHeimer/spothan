@@ -513,10 +513,8 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
    We position it at the visual centre of the teardrop (slightly up from pin anchor). */
 .hot-glow-wrap{
   position:absolute;
-  /* pin is 38×38, visual emoji centre is roughly at (19,19) before rotate */
   top:0;left:0;right:0;bottom:0;
   display:flex;align-items:center;justify-content:center;
-  /* undo the pin's -45° so child elements render upright / circular */
   transform:rotate(45deg);
   pointer-events:none;
   z-index:0;
@@ -552,6 +550,55 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
   0%{transform:scale(0.5);opacity:.9;}
   100%{transform:scale(2.2);opacity:0;}
 }
+/* ── INTENSE EVENT PULSE (for event pins) ── */
+.event-pulse-wrap{
+  position:absolute;
+  top:0;left:0;right:0;bottom:0;
+  display:flex;align-items:center;justify-content:center;
+  transform:rotate(45deg);
+  pointer-events:none;
+  z-index:0;
+  overflow:visible;
+}
+.event-pulse-wrap::before{
+  content:'';
+  position:absolute;
+  width:62px;height:62px;
+  border-radius:50%;
+  background:radial-gradient(circle, rgba(245,166,35,.85) 0%, rgba(245,120,0,.45) 45%, transparent 70%);
+  animation:evGlowPulse 1.1s ease-in-out infinite;
+}
+.event-ring{
+  position:absolute;
+  border-radius:50%;
+  opacity:0;
+}
+.event-ring-1{width:54px;height:54px;border:3px solid rgba(245,166,35,1);animation:evRadiate 1.4s cubic-bezier(.2,.6,.4,1) infinite;}
+.event-ring-2{width:54px;height:54px;border:2.5px solid rgba(255,140,0,.85);animation:evRadiate 1.4s cubic-bezier(.2,.6,.4,1) infinite .47s;}
+.event-ring-3{width:54px;height:54px;border:2px solid rgba(255,200,0,.6);animation:evRadiate 1.4s cubic-bezier(.2,.6,.4,1) infinite .94s;}
+@keyframes evGlowPulse{
+  0%,100%{opacity:.9;transform:scale(1);}
+  50%{opacity:1;transform:scale(1.25);}
+}
+@keyframes evRadiate{
+  0%{transform:scale(0.4);opacity:1;}
+  80%{opacity:.15;}
+  100%{transform:scale(2.8);opacity:0;}
+}
+/* Future event pulse — cooler blue-ish tone */
+.map-pin.pin-event-future .event-pulse-wrap::before{
+  background:radial-gradient(circle, rgba(80,160,255,.85) 0%, rgba(0,100,220,.35) 45%, transparent 70%);
+}
+.map-pin.pin-event-future .event-ring-1{border-color:rgba(80,160,255,1);}
+.map-pin.pin-event-future .event-ring-2{border-color:rgba(60,130,255,.8);}
+.map-pin.pin-event-future .event-ring-3{border-color:rgba(140,200,255,.6);}
+/* Urgent event — red intense */
+.map-pin.pin-urgent .event-pulse-wrap::before{
+  background:radial-gradient(circle, rgba(255,60,0,1) 0%, rgba(200,0,0,.5) 45%, transparent 70%);
+}
+.map-pin.pin-urgent .event-ring-1{border-color:rgba(255,60,0,1);}
+.map-pin.pin-urgent .event-ring-2{border-color:rgba(255,80,0,.85);}
+.map-pin.pin-urgent .event-ring-3{border-color:rgba(255,140,0,.6);}
 /* ── LIST SIDE PANEL ── */
 .list-panel{position:fixed;top:0;right:0;bottom:0;width:340px;max-width:92vw;background:var(--surface);z-index:250;box-shadow:-4px 0 32px rgba(13,13,13,.13);transform:translateX(100%);transition:transform .35s cubic-bezier(.32,.72,0,1);display:flex;flex-direction:column;overflow:hidden;}
 .list-panel.open{transform:translateX(0);}
@@ -742,8 +789,14 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
       <div class="f-grp">
         <label class="f-lbl">Active Dates</label>
         <div class="date-row">
-          <input class="f-in" type="date" id="pStart">
-          <input class="f-in" type="date" id="pEnd">
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <span style="font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.04em">FROM</span>
+            <input class="f-in" type="date" id="pStart">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <span style="font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.04em">TO</span>
+            <input class="f-in" type="date" id="pEnd">
+          </div>
         </div>
       </div>
     </div>
@@ -1519,6 +1572,10 @@ function decayW(ts) { return Math.pow(0.5, (now() - ts) / HALF_LIFE); }
 function wScore(p) { let u=0,d=0; p.votes.forEach(v=>{const w=decayW(v.ts);v.dir==='up'?u+=w:d+=w;}); return{up:u,dn:d,score:u-d,ratio:u/Math.max(.01,u+d)}; }
 function rawCounts(p) { let u=0,d=0; p.votes.forEach(v=>v.dir==='up'?u++:d++); return{up:u,dn:d}; }
 function isLTPlace(p) { return p.limitedTime === true; }
+// Parse YYYY-MM-DD as LOCAL midnight (avoids UTC-off-by-one on mobile)
+function parseLocalDate(s) { if(!s) return null; const [y,m,d]=s.split('-').map(Number); const dt=new Date(y,m-1,d); return dt.getTime(); }
+// End date is end-of-day inclusive: add DAY-1 ms so Friday→Sunday = 3 days
+function parseLocalDateEnd(s) { if(!s) return null; return parseLocalDate(s) + DAY - 1; }
 function isExpired(p) { return isLTPlace(p) && p.end && p.end < now(); }
 function daysLeft(p) { return isLTPlace(p) && p.end ? Math.max(0, Math.ceil((p.end-now())/DAY)) : null; }
 function daysUntilStart(p) { return isLTPlace(p) && p.start && p.start > now() ? Math.ceil((p.start-now())/DAY) : null; }
@@ -1618,6 +1675,7 @@ async function bootMap(center, zoom) {
   // ── LOAD PLACES IN VIEW on init ──
   await loadPlacesInView(map.getBounds());
   await loadVoteCounts(); // apply vote counts after places are in memory
+  applySort(); // re-render markers now that votes are loaded (scores & hot pins)
 
   let moveTimer = null;
   let lastSortCenter = null;
@@ -1715,21 +1773,29 @@ function buildMarker(p) {
   const dl=daysLeft(p);
   const isFutureEvent = isLTPlace(p) && dus !== null;
   const isHot=hotPlaceIds.has(p.id) && !urgent;
-  const pinCls=urgent?'pin-urgent':`pin-${p.cat}${(isHot||isFutureEvent)?' pin-hot':''}`;
+  const isEventPin = isLTPlace(p);
+  // Class: urgent pins stay pin-urgent, event pins get event-specific class, hot spots get pin-hot
+  const pinCls=urgent?'pin-urgent pin-event-urgent':(isEventPin?(isFutureEvent?'pin-events pin-event-future':'pin-events pin-event-active'):`pin-${p.cat}${isHot?' pin-hot':''}`);
   const ring=urgent?'<div class="pin-urgent-ring"></div>':'';
-  const hotHtml=(isHot||isFutureEvent||urgent)?'<div class="hot-glow-wrap"><div class="hot-ring hot-ring-1"></div><div class="hot-ring hot-ring-2"></div></div>':'';
-  const icon=L.divIcon({className:'',html:`<div class="map-pin ${pinCls}">${hotHtml}${ring}<div class="map-pin-inner">${p.emoji}</div><div class="pin-score ${scCls}">${scLbl}</div></div>`,iconSize:[38,38],iconAnchor:[19,38],popupAnchor:[0,-44]});
+  // Event pins always get the intense event pulse; hot (popularity) spots get the gold hot-ring
+  const eventPulseHtml = isEventPin ? '<div class="event-pulse-wrap"><div class="event-ring event-ring-1"></div><div class="event-ring event-ring-2"></div><div class="event-ring event-ring-3"></div></div>' : '';
+  const hotHtml = (!isEventPin && isHot) ? '<div class="hot-glow-wrap"><div class="hot-ring hot-ring-1"></div><div class="hot-ring hot-ring-2"></div></div>' : '';
+  const icon=L.divIcon({className:'',html:`<div class="map-pin ${pinCls}">${eventPulseHtml}${hotHtml}${ring}<div class="map-pin-inner">${p.emoji}</div><div class="pin-score ${scCls}">${scLbl}</div></div>`,iconSize:[38,38],iconAnchor:[19,38],popupAnchor:[0,-44]});
   // Build rich event badge
   let eBadge = '';
   if (isLTPlace(p)) {
-    const duration = (p.start && p.end) ? Math.round((p.end - p.start) / DAY) : null;
-    const durStr = (duration && isFutureEvent) ? ` · lasts ${duration} day${duration>1?'s':''}` : '';
+    // +1 because end date is inclusive (Fri→Sun = 3 days)
+    const duration = (p.start && p.end) ? Math.round((p.end - p.start) / DAY) + 1 : null;
     let timeStr;
-    if (dus !== null) timeStr = dus===0?'Starts today':dus===1?'Starts tomorrow':`Starts in ${dus} days`;
-    else timeStr = dl===0?'Ends today':dl===1?'Ends tomorrow':`${dl} days left`;
+    if (dus !== null) {
+      timeStr = dus===0?'Starts today':dus===1?'Starts tomorrow':`Starts in ${dus} days`;
+      if (duration) timeStr += ` · lasts ${duration} day${duration>1?'s':''}`;
+    } else {
+      timeStr = dl===0?'Ends today':dl===1?'1 day left':`${dl} days left`;
+    }
     const cls = urgent ? 'urgent' : isFutureEvent ? 'future' : 'normal';
-    const icon = urgent ? '🔴' : isFutureEvent ? '🗓️' : '🟡';
-    eBadge = `<div class="cp-ebadge ${cls}">${icon} ${timeStr}${durStr}</div>`;
+    const badgeIcon = urgent ? '🔴' : isFutureEvent ? '🗓️' : '🟡';
+    eBadge = `<div class="cp-ebadge ${cls}">${badgeIcon} ${timeStr}</div>`;
   }
   const normalPopup = `<div class="cp"><div class="cp-top"><span class="cp-emoji">${esc(p.emoji)}</span><div><div class="cp-name">${esc(p.name)}</div></div></div><div class="cp-sub">📍 ${esc(p.address)}</div>${eBadge}<div class="cp-votes"><span class="cp-up">👍 ${raw.up}</span><div class="cp-bar"><div class="cp-fill" style="width:${pct}%"></div></div><span class="cp-dn">👎 ${raw.dn}</span></div><button class="cp-btn" onclick="openSheet(${p.id})">View Details →</button></div>`;
   const m=L.marker([p.lat,p.lng],{icon, _spothanId: p.id});
@@ -1830,11 +1896,17 @@ function openSheet(id) {
   let evBanner='';
   if (isLTPlace(p)) {
     const dl=daysLeft(p), urg=isUrgent(p), dus=daysUntilStart(p);
-    const duration = (p.start && p.end) ? Math.round((p.end - p.start) / DAY) : null;
-    const durStr = (duration && isFut) ? `, lasts ${duration} day${duration>1?'s':''}` : '';
     const isFut = dus !== null;
-    const msg=isFut?(dus===0?'Starts today':dus===1?'Starts tomorrow':`Starts in ${dus} days`):dl===0?'Ends today!':dl===1?'Ends tomorrow!':`Ends in ${dl} days`;
-    evBanner=`<div class="event-banner ${urg?'urgent':isFut?'future':'active'}"><span class="eb-icon">${urg?'🔴':isFut?'🗓️':'📅'}</span><div><div class="eb-lbl">Time-limited</div><div class="eb-time">${msg}${durStr}</div></div></div>`;
+    // +1 because end date is inclusive (Fri→Sun = 3 days)
+    const duration = (p.start && p.end) ? Math.round((p.end - p.start) / DAY) + 1 : null;
+    let msg;
+    if (isFut) {
+      msg = dus===0?'Starts today':dus===1?'Starts tomorrow':`Starts in ${dus} days`;
+      if (duration) msg += ` · lasts ${duration} day${duration>1?'s':''}`;
+    } else {
+      msg = dl===0?'Ends today!':dl===1?'1 day left':`${dl} days left`;
+    }
+    evBanner=`<div class="event-banner ${urg?'urgent':isFut?'future':'active'}"><span class="eb-icon">${urg?'🔴':isFut?'🗓️':'📅'}</span><div><div class="eb-lbl">Time-limited</div><div class="eb-time">${msg}</div></div></div>`;
   }
   const distStr = userCenter
     ? `<div class="sh-dist">📏 ${formatDist(haversine(userCenter[0],userCenter[1],p.lat,p.lng))}</div>`
@@ -2064,10 +2136,10 @@ async function submitPlace() {
   if (isLimitedTime) {
     const s = document.getElementById('pStart').value, e = document.getElementById('pEnd').value;
     if (!s || !e) { showToast('Please set start and end dates for limited-time places 📅'); return; }
-    if (new Date(e) <= new Date(s)) { showToast('End date must be after start date 📅'); return; }
+    if (parseLocalDate(e) < parseLocalDate(s)) { showToast('End date must be after start date 📅'); return; }
     np.limitedTime = true;
-    if (s) np.start = new Date(s).getTime();
-    if (e) np.end = new Date(e).getTime();
+    np.start = parseLocalDate(s);
+    np.end = parseLocalDateEnd(e);
   }
 
   // Disable submit button to prevent double-submission
@@ -2228,10 +2300,10 @@ function bindUI() {
     let hits = [];
     try {
       const rows = await sb.select('places',
-        `status=eq.live&name=ilike.*${encodeURIComponent(q)}*&limit=6` +
+        `status=eq.live&name=ilike.*${encodeURIComponent(q)}*&limit=12` +
         `&select=id,name,category,emoji,lat,lng,address,description,hours,limited_time,start_ts,end_ts,created_at,device_id`
       );
-      hits = (rows || []).map(dbToPlace);
+      hits = (rows || []).map(dbToPlace).filter(p => !isExpired(p)).slice(0, 6);
     } catch(e) {
       // Fallback to in-memory search if DB query fails
       hits = places.filter(p => !isExpired(p) && (
@@ -3342,8 +3414,8 @@ function _collectAdminPendingEdits(id, p) {
   const useLT = _apLT[id] ?? p.limitedTime ?? false;
   const sVal  = document.getElementById(`apStart${id}`)?.value;
   const eVal  = document.getElementById(`apEnd${id}`)?.value;
-  const start = sVal ? new Date(sVal).getTime() : (p.start || null);
-  const end   = eVal ? new Date(eVal).getTime() : (p.end || null);
+  const start = sVal ? parseLocalDate(sVal) : (p.start || null);
+  const end   = eVal ? parseLocalDateEnd(eVal) : (p.end || null);
   const hours = _readApHours(id, p);
   return { name, emoji, address: addr, desc, cat, lat, lng, limitedTime: useLT, start, end, hours };
 }
@@ -3599,9 +3671,9 @@ async function adminSaveLive(id) {
     const sVal = document.getElementById(`alStart${id}`)?.value;
     const eVal = document.getElementById(`alEnd${id}`)?.value;
     if (!eVal) { showToast('End date is required for limited-time places 📅'); return; }
-    startTs = sVal ? new Date(sVal).getTime() : null;
-    endTs   = eVal ? new Date(eVal).getTime() : null;
-    if (startTs && endTs && endTs <= startTs) { showToast('End date must be after start date 📅'); return; }
+    startTs = sVal ? parseLocalDate(sVal) : null;
+    endTs   = eVal ? parseLocalDateEnd(eVal) : null;
+    if (startTs && endTs && endTs < startTs) { showToast('End date must be after start date 📅'); return; }
   }
 
   // Hours
@@ -4081,9 +4153,9 @@ async function saveEditPlace(id) {
   const eVal     = document.getElementById(`eEnd${id}`)?.value;
   if (!newName) { showToast('Name cannot be empty'); return; }
   if (useLT && !eVal) { showToast('End date is required for limited-time places 📅'); return; }
-  const startTs  = sVal ? new Date(sVal).getTime() : null;
-  const endTs    = eVal ? new Date(eVal).getTime() : null;
-  if (useLT && startTs && endTs && endTs <= startTs) { showToast('End date must be after start date 📅'); return; }
+  const startTs  = sVal ? parseLocalDate(sVal) : null;
+  const endTs    = eVal ? parseLocalDateEnd(eVal) : null;
+  if (useLT && startTs && endTs && endTs < startTs) { showToast('End date must be after start date 📅'); return; }
   try {
     await sb.update('places', id, {
       name: newName, address: newAddr || p.address, description: newDesc, emoji: newEmoji, category: newCat,
