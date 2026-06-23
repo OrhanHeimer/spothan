@@ -614,6 +614,9 @@ body{font-family:'Instrument Sans',sans-serif;background:var(--bg);color:var(--i
 .list-item{display:flex;align-items:center;gap:11px;padding:11px 10px;border-radius:14px;cursor:pointer;transition:background .12s;border-bottom:1px solid var(--warm);}
 .list-item:hover{background:var(--bg);}
 .list-item:last-child{border-bottom:none;}
+.list-item.list-active{background:var(--warm);outline:2px solid var(--accent);}
+.map-pin-highlight::after{content:'';position:absolute;inset:-6px;border-radius:50%;border:3px solid var(--accent);animation:listHighlightRing 1.2s ease-in-out infinite;pointer-events:none;}
+@keyframes listHighlightRing{0%,100%{transform:scale(1);opacity:1;}50%{transform:scale(1.25);opacity:.5;}}
 .list-item-emoji{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;}
 .list-item-info{flex:1;min-width:0;}
 .list-item-name{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -1886,10 +1889,21 @@ function applySort() {
 function updateCount(n) { document.getElementById('countText').textContent=`${n} place${n!==1?'s':''}`; }
 applySort._gen = 0;
 
-function openSheet(id) {
+function highlightListMarker(id) {
+  // Remove previous highlight
+  document.querySelectorAll('.map-pin-highlight').forEach(el => el.classList.remove('map-pin-highlight'));
+  if (id == null) return;
+  const m = markers[id];
+  if (!m) return;
+  const el = m.getElement();
+  if (el) { const pin = el.querySelector('.map-pin'); if (pin) pin.classList.add('map-pin-highlight'); }
+}
+window.highlightListMarker = highlightListMarker;
+
+function openSheet(id, noPan) {
   const p=places.find(x=>x.id===id); if(!p) return;
   map.closePopup();
-  map.panTo([p.lat,p.lng],{animate:true});
+  if (!noPan) map.panTo([p.lat,p.lng],{animate:true});
   const ws=wScore(p), raw=rawCounts(p);
   const pct=Math.round(ws.ratio*100), sc=Math.round(ws.score);
   const myVote=userVotes[p.id];
@@ -1966,6 +1980,8 @@ function closeSheet() {
   document.getElementById('backdrop').classList.remove('on');
   document.getElementById('sheet').classList.remove('on');
   history.replaceState(null, '', location.pathname);
+  if (window.highlightListMarker) window.highlightListMarker(null);
+  document.querySelectorAll('.list-item.list-active').forEach(e => e.classList.remove('list-active'));
 }
 
 function castVote(id, dir) {
@@ -4853,8 +4869,13 @@ window.openSheet  = openSheet;
         const id = parseInt(el.dataset.id);
         const p = (window.places || []).find(x => x.id === id);
         if (!p) return;
-        window.map.setView([p.lat, p.lng], 17, { animate: true });
-        setTimeout(() => { if (window.openSheet) window.openSheet(p.id); }, 320);
+        // Highlight active row
+        body.querySelectorAll('.list-item').forEach(e => e.classList.remove('list-active'));
+        el.classList.add('list-active');
+        // Highlight marker on map without panning
+        if (window.highlightListMarker) window.highlightListMarker(p.id);
+        // Open info sheet without changing the map view
+        if (window.openSheet) window.openSheet(p.id, true);
       });
     });
   }
